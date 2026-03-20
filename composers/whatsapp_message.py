@@ -101,7 +101,7 @@ def compose(data: dict[str, Any]) -> str:
         )
         lines.append(
             f"🚫 No-shows: *{agenda['total_noshows']}* | "
-            f"Cancelamentos: *{agenda['total_cancelados']}*"
+            f"🔒 Fechamentos: *{agenda['total_fechamentos']}*"
         )
         lines.append(
             f"📱 App: *{agenda['total_app']}* | "

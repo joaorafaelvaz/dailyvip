@@ -104,8 +104,8 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
         if unit_agenda:
             total = int(unit_agenda.get("total") or 0)
             realizados = int(unit_agenda.get("realizados") or 0)
-            cancelados = int(unit_agenda.get("cancelados") or 0)
             noshows = int(unit_agenda.get("noshows") or 0)
+            fechamentos = int(unit_agenda.get("fechamentos") or 0)
             app = int(unit_agenda.get("agend_app") or 0)
             recepcao = int(unit_agenda.get("agend_recepcao") or 0)
 
@@ -114,7 +114,7 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
 
             lines.append(f"Ocupação: *{ocupacao:.1f}%* ({realizados}/{total})")
             lines.append(f"Ocupação rede: {ocupacao_rede:.1f}%")
-            lines.append(f"🚫 No-shows: *{noshows}* | Cancelamentos: *{cancelados}*")
+            lines.append(f"🚫 No-shows: *{noshows}* | 🔒 Fechamentos: *{fechamentos}*")
             lines.append(f"📱 App: *{app}* | Recepção: *{recepcao}*")
         else:
             lines.append("⚠️ _Sem dados de agenda_")

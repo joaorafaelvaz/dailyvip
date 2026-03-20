@@ -267,7 +267,14 @@ def get_meta_mensal(media_hist: dict[int, float] = None) -> dict:
 
 
 def get_agenda_ontem() -> dict[str, Any]:
-    """Retorna métricas de agenda do dia anterior por unidade."""
+    """Retorna métricas de agenda do dia anterior por unidade.
+
+    Lógica dos campos da tabela `agendas`:
+    - fechamento IS NOT NULL → slot bloqueado (fechamento de agenda), NÃO é no-show
+    - fechamento IS NULL     → agendamento real de cliente
+    - checkin = 1            → cliente compareceu (realizado)
+    - checkin = 0 AND fechamento IS NULL → no-show real
+    """
     ontem = date.today() - timedelta(days=1)
     rows = _query(
         """
@@ -275,26 +282,27 @@ def get_agenda_ontem() -> dict[str, Any]:
             u.id   AS unidade_id,
             u.nome AS unidade_nome,
             u.cidade,
-            COUNT(a.id)                              AS total,
-            SUM(a.checkin = 1)                       AS realizados,
-            SUM(a.status = 0)                        AS cancelados,
-            SUM(a.status != 0 AND a.checkin = 0)     AS noshows,
-            SUM(a.origem = 'APP')                    AS agend_app,
-            SUM(a.origem != 'APP')                   AS agend_recepcao
+            SUM(a.fechamento IS NULL)                                      AS total,
+            SUM(a.checkin = 1)                                             AS realizados,
+            SUM(a.checkin = 0 AND a.fechamento IS NULL)                    AS noshows,
+            SUM(a.fechamento IS NOT NULL)                                  AS fechamentos,
+            SUM(a.fechamento IS NULL AND LOWER(a.origem) = 'app')          AS agend_app,
+            SUM(a.fechamento IS NULL AND LOWER(a.origem) != 'app')         AS agend_recepcao
         FROM agendas a
         JOIN usuarios usr ON usr.id = a.colaborador
         JOIN unidades u   ON u.id  = usr.unidade
         WHERE DATE(a.data) = %s
+          AND a.status = 1
         GROUP BY u.id, u.nome, u.cidade
         ORDER BY u.nome
         """,
         (ontem,),
     )
 
-    total_agendamentos = sum(r["total"] for r in rows)
+    total_agendamentos = sum(r["total"] or 0 for r in rows)
     total_realizados = sum(r["realizados"] or 0 for r in rows)
-    total_cancelados = sum(r["cancelados"] or 0 for r in rows)
     total_noshows = sum(r["noshows"] or 0 for r in rows)
+    total_fechamentos = sum(r["fechamentos"] or 0 for r in rows)
     total_app = sum(r["agend_app"] or 0 for r in rows)
     total_recepcao = sum(r["agend_recepcao"] or 0 for r in rows)
 
@@ -308,8 +316,8 @@ def get_agenda_ontem() -> dict[str, Any]:
         "data": str(ontem),
         "total_agendamentos": total_agendamentos,
         "total_realizados": total_realizados,
-        "total_cancelados": total_cancelados,
         "total_noshows": total_noshows,
+        "total_fechamentos": total_fechamentos,
         "total_app": total_app,
         "total_recepcao": total_recepcao,
         "ocupacao_rede_pct": ocupacao_rede,
