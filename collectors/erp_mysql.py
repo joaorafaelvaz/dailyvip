@@ -46,6 +46,7 @@ def _get_connection():
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
         connect_timeout=10,
+        read_timeout=30,
     )
 
 
@@ -605,9 +606,12 @@ def collect_all() -> dict[str, Any]:
         "aniversarios": get_aniversarios_hoje,
     }
 
+    import time as _time
     for name, fn in collectors.items():
         try:
+            t0 = _time.monotonic()
             result[name] = fn()
+            logger.info("ERP '%s' ok (%.1fs)", name, _time.monotonic() - t0)
         except Exception as exc:
             logger.error("ERP collector '%s' falhou: %s", name, exc, exc_info=True)
             result[name] = None
