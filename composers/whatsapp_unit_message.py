@@ -102,18 +102,19 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
     if agenda and agenda.get("unidades"):
         unit_agenda = _find_unit(agenda["unidades"], unidade_id)
         if unit_agenda:
-            total = int(unit_agenda.get("total") or 0)
+            total_slots = int(unit_agenda.get("total_slots") or 0)
+            ocupados = int(unit_agenda.get("ocupados") or 0)
             realizados = int(unit_agenda.get("realizados") or 0)
             noshows = int(unit_agenda.get("noshows") or 0)
             fechamentos = int(unit_agenda.get("fechamentos") or 0)
             app = int(unit_agenda.get("agend_app") or 0)
             recepcao = int(unit_agenda.get("agend_recepcao") or 0)
 
-            ocupacao = (realizados / total * 100) if total > 0 else 0
+            ocupacao = float(unit_agenda.get("ocupacao_pct") or 0)
             ocupacao_rede = float(agenda.get("ocupacao_rede_pct") or 0)
 
-            lines.append(f"Ocupação: *{ocupacao:.1f}%* ({realizados}/{total})")
-            lines.append(f"Ocupação rede: {ocupacao_rede:.1f}%")
+            lines.append(f"Ocupação: *{ocupacao:.1f}%* ({ocupados}/{total_slots} slots)")
+            lines.append(f"Realizados: *{realizados}* | Ocupação rede: {ocupacao_rede:.1f}%")
             lines.append(f"🚫 No-shows: *{noshows}* | 🔒 Fechamentos: *{fechamentos}*")
             lines.append(f"📱 App: *{app}* | Recepção: *{recepcao}*")
         else:

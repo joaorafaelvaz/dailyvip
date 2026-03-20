@@ -97,7 +97,10 @@ def compose(data: dict[str, Any]) -> str:
     if agenda:
         lines.append(
             f"Ocupação rede: *{_fmt_pct(agenda['ocupacao_rede_pct'])}* "
-            f"({agenda['total_realizados']}/{agenda['total_agendamentos']})"
+            f"({agenda['total_ocupados']}/{agenda['total_slots']} slots)"
+        )
+        lines.append(
+            f"Realizados: *{agenda['total_realizados']}* atendimentos"
         )
         lines.append(
             f"🚫 No-shows: *{agenda['total_noshows']}* | "
@@ -188,23 +191,21 @@ def compose(data: dict[str, Any]) -> str:
     # ── Ocupação por unidade (top/bottom) ───────────────────────────────────────
     if agenda and agenda.get("unidades"):
         agenda_units = agenda["unidades"]
-        # Calcula ocupação individual e ordena
-        for au in agenda_units:
-            t = int(au.get("total") or 0)
-            r = int(au.get("realizados") or 0)
-            au["_ocupacao_pct"] = round(r / t * 100, 1) if t > 0 else 0
-
-        sorted_ocup = sorted(agenda_units, key=lambda x: x["_ocupacao_pct"], reverse=True)
-        com_dados = [u for u in sorted_ocup if u["_ocupacao_pct"] > 0]
+        sorted_ocup = sorted(
+            agenda_units,
+            key=lambda x: float(x.get("ocupacao_pct") or 0),
+            reverse=True,
+        )
+        com_dados = [u for u in sorted_ocup if float(u.get("ocupacao_pct") or 0) > 0]
 
         if com_dados:
             lines.append(_section("📊 *OCUPAÇÃO POR UNIDADE*"))
             lines.append("🏆 *Maior ocupação:*")
             for u in com_dados[:5]:
-                lines.append(f"  • {_short_name(u)} — *{u['_ocupacao_pct']:.1f}%*")
+                lines.append(f"  • {_short_name(u)} — *{u['ocupacao_pct']:.1f}%*")
             lines.append("⚠️ *Menor ocupação:*")
             for u in com_dados[-5:][::-1]:
-                lines.append(f"  • {_short_name(u)} — *{u['_ocupacao_pct']:.1f}%*")
+                lines.append(f"  • {_short_name(u)} — *{u['ocupacao_pct']:.1f}%*")
 
     # ── Aniversários ──────────────────────────────────────────────────────────
     aniversarios = data.get("aniversarios", [])

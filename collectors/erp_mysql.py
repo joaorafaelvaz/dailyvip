@@ -266,28 +266,79 @@ def get_meta_mensal(media_hist: dict[int, float] = None) -> dict:
     }
 
 
+def _get_slots_disponiveis(dt: date) -> dict[int, int]:
+    """Calcula total de slots disponíveis por unidade, baseado na escala dos barbeiros.
+
+    Usa as colunas {dia}_abertura, {dia}_fechamento, {dia}_almoco_inicio,
+    {dia}_almoco_fim e tempo_atendimento da tabela usuarios.
+    Retorna {unidade_id: total_slots}.
+    """
+    dias = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
+    dia = dias[dt.weekday()]  # weekday(): 0=Monday=segunda
+
+    rows = _query(
+        f"""
+        SELECT
+            u.id AS unidade_id,
+            SUM(
+                FLOOR(
+                    (
+                        TIME_TO_SEC(usr.{dia}_fechamento)
+                        - TIME_TO_SEC(usr.{dia}_abertura)
+                        - GREATEST(0,
+                            COALESCE(TIME_TO_SEC(usr.{dia}_almoco_fim), 0)
+                            - COALESCE(TIME_TO_SEC(usr.{dia}_almoco_inicio), 0)
+                        )
+                    ) / (usr.tempo_atendimento * 60)
+                )
+            ) AS total_slots
+        FROM usuarios usr
+        JOIN grupos g   ON g.id  = usr.grupo
+        JOIN unidades u ON u.id  = usr.unidade
+        WHERE g.colaborador = 1
+          AND usr.status = 1
+          AND u.status = 1
+          AND usr.{dia}_abertura IS NOT NULL
+          AND usr.{dia}_fechamento IS NOT NULL
+          AND usr.tempo_atendimento > 0
+          AND (usr.ferias_inicio IS NULL
+               OR %s NOT BETWEEN usr.ferias_inicio AND usr.ferias_fim)
+        GROUP BY u.id
+        """,
+        (dt,),
+    )
+
+    return {r["unidade_id"]: int(r["total_slots"] or 0) for r in rows}
+
+
 def get_agenda_ontem() -> dict[str, Any]:
     """Retorna métricas de agenda do dia anterior por unidade.
 
-    Lógica dos campos da tabela `agendas`:
-    - fechamento IS NOT NULL → slot bloqueado (fechamento de agenda), NÃO é no-show
-    - fechamento IS NULL     → agendamento real de cliente
-    - checkin = 1            → cliente compareceu (realizado)
-    - checkin = 0 AND fechamento IS NULL → no-show real
+    Ocupação = (registros na agenda) / (slots disponíveis da escala).
+    - total_slots: calculado da escala dos barbeiros (horário trabalho / tempo_atendimento)
+    - realizados: checkin=1 (atendimentos concluídos)
+    - noshows: checkin=0 AND fechamento IS NULL (cliente não compareceu)
+    - fechamentos: fechamento IS NOT NULL (slots bloqueados)
+    - ocupados: realizados + noshows + fechamentos (todos os slots usados)
     """
     ontem = date.today() - timedelta(days=1)
+
+    # 1. Total de slots disponíveis por unidade (escala dos barbeiros)
+    slots_por_unidade = _get_slots_disponiveis(ontem)
+
+    # 2. Agenda efetiva
     rows = _query(
         """
         SELECT
             u.id   AS unidade_id,
             u.nome AS unidade_nome,
             u.cidade,
-            SUM(a.fechamento IS NULL)                                      AS total,
-            SUM(a.checkin = 1)                                             AS realizados,
-            SUM(a.checkin = 0 AND a.fechamento IS NULL)                    AS noshows,
-            SUM(a.fechamento IS NOT NULL)                                  AS fechamentos,
-            SUM(a.fechamento IS NULL AND LOWER(a.origem) = 'app')          AS agend_app,
-            SUM(a.fechamento IS NULL AND LOWER(a.origem) != 'app')         AS agend_recepcao
+            COUNT(a.id)                                                AS ocupados,
+            SUM(a.checkin = 1)                                         AS realizados,
+            SUM(a.checkin = 0 AND a.fechamento IS NULL)                AS noshows,
+            SUM(a.fechamento IS NOT NULL)                              AS fechamentos,
+            SUM(a.fechamento IS NULL AND LOWER(a.origem) = 'app')      AS agend_app,
+            SUM(a.fechamento IS NULL AND LOWER(a.origem) != 'app')     AS agend_recepcao
         FROM agendas a
         JOIN usuarios usr ON usr.id = a.colaborador
         JOIN unidades u   ON u.id  = usr.unidade
@@ -299,22 +350,36 @@ def get_agenda_ontem() -> dict[str, Any]:
         (ontem,),
     )
 
-    total_agendamentos = sum(r["total"] or 0 for r in rows)
-    total_realizados = sum(r["realizados"] or 0 for r in rows)
-    total_noshows = sum(r["noshows"] or 0 for r in rows)
-    total_fechamentos = sum(r["fechamentos"] or 0 for r in rows)
-    total_app = sum(r["agend_app"] or 0 for r in rows)
-    total_recepcao = sum(r["agend_recepcao"] or 0 for r in rows)
+    # 3. Enriquece cada unidade com total_slots e calcula ocupação
+    for r in rows:
+        uid = r["unidade_id"]
+        r["total_slots"] = slots_por_unidade.get(uid, 0)
+        ocupados = int(r["ocupados"] or 0)
+        r["ocupacao_pct"] = (
+            round(ocupados / r["total_slots"] * 100, 1)
+            if r["total_slots"] > 0
+            else 0
+        )
+
+    # 4. Totais da rede
+    total_slots_rede = sum(r["total_slots"] for r in rows)
+    total_ocupados = sum(int(r["ocupados"] or 0) for r in rows)
+    total_realizados = sum(int(r["realizados"] or 0) for r in rows)
+    total_noshows = sum(int(r["noshows"] or 0) for r in rows)
+    total_fechamentos = sum(int(r["fechamentos"] or 0) for r in rows)
+    total_app = sum(int(r["agend_app"] or 0) for r in rows)
+    total_recepcao = sum(int(r["agend_recepcao"] or 0) for r in rows)
 
     ocupacao_rede = (
-        round(total_realizados / total_agendamentos * 100, 1)
-        if total_agendamentos
+        round(total_ocupados / total_slots_rede * 100, 1)
+        if total_slots_rede
         else 0
     )
 
     return {
         "data": str(ontem),
-        "total_agendamentos": total_agendamentos,
+        "total_slots": total_slots_rede,
+        "total_ocupados": total_ocupados,
         "total_realizados": total_realizados,
         "total_noshows": total_noshows,
         "total_fechamentos": total_fechamentos,
