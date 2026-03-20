@@ -1,0 +1,27 @@
+[Unit]
+Description=Daily Briefing — Barbearia VIP
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=briefing
+Group=briefing
+WorkingDirectory=/opt/barbearia-daily
+ExecStart=/opt/barbearia-daily/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=30
+
+# Ambiente
+EnvironmentFile=/opt/barbearia-daily/.env
+
+# Logs via journald (além do daily.log do próprio app)
+StandardOutput=append:/opt/barbearia-daily/daily.log
+StandardError=append:/opt/barbearia-daily/daily.log
+
+# Segurança mínima
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

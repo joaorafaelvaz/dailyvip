@@ -1,0 +1,25 @@
+# Secrets
+.env
+credentials/
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Logs
+*.log
+*.log.*
+
+# Saída gerada (não versionar HTMLs)
+output/*.html
+
+# IDE
+.vscode/
+.idea/
+*.swp

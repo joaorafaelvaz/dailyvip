@@ -1,0 +1,8 @@
+# Normaliza line endings
+* text=auto
+
+# Shell scripts sempre com LF (Linux)
+*.sh text eol=lf
+deploy/*.sh text eol=lf
+deploy/*.service text eol=lf
+deploy/nginx.conf text eol=lf

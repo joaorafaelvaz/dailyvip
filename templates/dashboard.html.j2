@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Daily Briefing VIP — {{ hoje.strftime('%d/%m/%Y') }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Segoe UI', system-ui, sans-serif; }
+    .card { @apply bg-white rounded-2xl shadow p-5 mb-4; }
+    .badge-green  { @apply inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700; }
+    .badge-yellow { @apply inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700; }
+    .badge-red    { @apply inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700; }
+    .progress-bar { height: 8px; border-radius: 4px; background: #e5e7eb; }
+    .progress-fill { height: 8px; border-radius: 4px; transition: width 0.3s; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+
+  <!-- ── Header ── -->
+  <header class="bg-gradient-to-r from-gray-900 to-gray-700 text-white px-6 py-5 mb-6">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">📊 Daily Briefing VIP</h1>
+        <p class="text-gray-300 text-sm mt-1">{{ hoje.strftime('%A, %d de %B de %Y').capitalize() }}</p>
+      </div>
+      <div class="text-right text-sm text-gray-400">
+        Gerado às {{ hoje.strftime('%H:%M') if hoje else '08:00' }}<br>
+        51+ unidades monitoradas
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 pb-12">
+
+    <!-- ── Cards de resumo ─────────────────────────────────────────────────── -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+
+      <!-- Faturamento -->
+      {% set fat = data.get('faturamento') %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Faturamento Ontem</p>
+        <p class="text-2xl font-bold text-gray-900">
+          {{ fat.total_rede | brl if fat else '--' }}
+        </p>
+        <p class="text-xs text-gray-400 mt-1">
+          {{ fat.total_vendas_rede if fat else 0 }} vendas | ticket {{ fat.ticket_medio_rede | brl if fat else '--' }}
+        </p>
+      </div>
+
+      <!-- Meta mensal -->
+      {% set meta = data.get('meta_mensal') %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Meta Mensal</p>
+        <p class="text-2xl font-bold {% if meta and meta.pct_rede and meta.pct_rede >= 80 %}text-green-600{% elif meta and meta.pct_rede %}text-yellow-600{% else %}text-gray-900{% endif %}">
+          {{ meta.pct_rede | pct if meta else '--' }}
+        </p>
+        <p class="text-xs text-gray-400 mt-1">
+          {{ meta.acumulado_rede | brl if meta else '--' }} / {{ meta.meta_rede | brl if meta else '--' }}
+        </p>
+      </div>
+
+      <!-- Ocupação agenda -->
+      {% set agenda = data.get('agenda') %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Ocupação Agenda</p>
+        <p class="text-2xl font-bold {% if agenda and agenda.ocupacao_rede_pct >= 70 %}text-green-600{% elif agenda and agenda.ocupacao_rede_pct >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+          {{ agenda.ocupacao_rede_pct | pct if agenda else '--' }}
+        </p>
+        <p class="text-xs text-gray-400 mt-1">
+          No-shows: {{ agenda.total_noshows if agenda else 0 }} | Cancelados: {{ agenda.total_cancelados if agenda else 0 }}
+        </p>
+      </div>
+
+      <!-- Satisfação -->
+      {% set scam = data.get('satisfycam', {}).get('relatorio') %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs text-gray-500 uppercase font-semibold mb-1">SatisfyCAM</p>
+        <p class="text-2xl font-bold {% if scam and scam.pct_satisfied >= 80 %}text-green-600{% elif scam and scam.pct_satisfied >= 60 %}text-yellow-600{% else %}text-red-600{% endif %}">
+          {{ scam.pct_satisfied | pct if scam else '--' }}
+        </p>
+        <p class="text-xs text-gray-400 mt-1">
+          {{ scam.total_clientes if scam else 0 }} detecções | {{ scam.pct_unsatisfied | pct if scam else '--' }} negativos
+        </p>
+      </div>
+
+    </div>
+
+    <!-- ── Ranking de Unidades ─────────────────────────────────────────────── -->
+    {% if fat and fat.unidades %}
+    <div class="bg-white rounded-2xl shadow p-5 mb-6">
+      <h2 class="text-lg font-bold mb-4">🏆 Ranking de Unidades — Faturamento</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs text-gray-500 border-b">
+              <th class="pb-2 pr-4">#</th>
+              <th class="pb-2 pr-4">Unidade</th>
+              <th class="pb-2 pr-4">Cidade</th>
+              <th class="pb-2 pr-4 text-right">Faturamento</th>
+              <th class="pb-2 pr-4 text-right">Ticket Médio</th>
+              <th class="pb-2 pr-4 text-right">Vendas</th>
+              <th class="pb-2 w-32">% Meta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in fat.unidades %}
+            <tr class="border-b border-gray-50 hover:bg-gray-50 {% if loop.index <= 5 %}bg-green-50{% elif loop.revindex <= 5 %}bg-red-50{% endif %}">
+              <td class="py-2 pr-4 text-gray-400 font-mono">{{ loop.index }}</td>
+              <td class="py-2 pr-4 font-medium">{{ u.unidade_nome or '—' }}</td>
+              <td class="py-2 pr-4 text-gray-500">{{ u.cidade or '—' }}</td>
+              <td class="py-2 pr-4 text-right font-semibold">{{ u.faturamento | brl }}</td>
+              <td class="py-2 pr-4 text-right text-gray-600">{{ u.ticket_medio | brl }}</td>
+              <td class="py-2 pr-4 text-right text-gray-600">{{ u.total_vendas }}</td>
+              <td class="py-2">
+                {% if u.pct_meta is not none %}
+                <div class="flex items-center gap-2">
+                  <div class="progress-bar flex-1">
+                    <div class="progress-fill {% if u.pct_meta >= 100 %}bg-green-500{% elif u.pct_meta >= 70 %}bg-yellow-400{% else %}bg-red-400{% endif %}"
+                         style="width: {{ [u.pct_meta, 100] | min }}%"></div>
+                  </div>
+                  <span class="text-xs font-bold {% if u.pct_meta >= 100 %}text-green-600{% elif u.pct_meta >= 70 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                    {{ u.pct_meta | pct }}
+                  </span>
+                </div>
+                {% else %}
+                <span class="text-gray-300 text-xs">sem meta</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
+      <!-- ── Inadimplência ── -->
+      {% set inadim = data.get('inadimplencia') %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <h2 class="text-lg font-bold mb-4">💳 Inadimplência</h2>
+        {% if inadim %}
+          {% set roy = inadim.get('royalties', []) %}
+          {% set fundo = inadim.get('fundo_publicidade', []) %}
+
+          <p class="text-sm font-semibold text-gray-600 mb-2">Royalties
+            <span class="{% if roy %}badge-red{% else %}badge-green{% endif %}">
+              {{ roy | length }} unidade(s)
+            </span>
+          </p>
+          {% if roy %}
+          <table class="w-full text-xs mb-4">
+            <thead><tr class="text-gray-400"><th class="text-left pb-1">Unidade</th><th class="text-right pb-1">Valor</th><th class="text-right pb-1">Atraso</th></tr></thead>
+            <tbody>
+              {% for r in roy %}
+              <tr class="border-t border-gray-100">
+                <td class="py-1">{{ r.unidade_nome }}</td>
+                <td class="py-1 text-right text-red-600 font-semibold">{{ r.valor | brl }}</td>
+                <td class="py-1 text-right text-red-500">{{ r.dias_atraso }}d</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+
+          <p class="text-sm font-semibold text-gray-600 mb-2">Fundo de Publicidade
+            <span class="{% if fundo %}badge-red{% else %}badge-green{% endif %}">
+              {{ fundo | length }} unidade(s)
+            </span>
+          </p>
+          {% if fundo %}
+          <table class="w-full text-xs">
+            <thead><tr class="text-gray-400"><th class="text-left pb-1">Unidade</th><th class="text-right pb-1">Valor</th><th class="text-right pb-1">Atraso</th></tr></thead>
+            <tbody>
+              {% for r in fundo %}
+              <tr class="border-t border-gray-100">
+                <td class="py-1">{{ r.unidade_nome }}</td>
+                <td class="py-1 text-right text-red-600 font-semibold">{{ r.valor | brl }}</td>
+                <td class="py-1 text-right text-red-500">{{ r.dias_atraso }}d</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+          {% if not roy and not fundo %}
+          <p class="text-green-600 font-semibold text-sm">✅ Nenhuma inadimplência</p>
+          {% endif %}
+        {% else %}
+          <p class="text-gray-400 text-sm italic">Dados indisponíveis</p>
+        {% endif %}
+      </div>
+
+      <!-- ── CRM / Leads ── -->
+      {% set perfex = data.get('perfex', {}).get('leads') %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <h2 class="text-lg font-bold mb-4">🎯 CRM — Leads Franqueados</h2>
+        {% if perfex %}
+          <div class="flex gap-6 mb-4">
+            <div class="text-center">
+              <p class="text-3xl font-bold text-blue-600">{{ perfex.novos_24h }}</p>
+              <p class="text-xs text-gray-500">novos leads 24h</p>
+            </div>
+            <div class="text-center">
+              <p class="text-3xl font-bold text-gray-700">{{ perfex.total_leads }}</p>
+              <p class="text-xs text-gray-500">total no pipeline</p>
+            </div>
+          </div>
+          {% if perfex.funil %}
+          <p class="text-xs font-semibold text-gray-500 mb-2 uppercase">Funil</p>
+          <div class="space-y-1">
+            {% for status, count in perfex.funil.items() %}
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-gray-600">{{ status }}</span>
+              <span class="font-bold text-gray-800">{{ count }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        {% else %}
+          <p class="text-gray-400 text-sm italic">Dados indisponíveis</p>
+        {% endif %}
+      </div>
+
+    </div>
+
+    <!-- ── Google Reviews ── -->
+    {% set reviews = data.get('google', {}).get('reviews') %}
+    {% if reviews and reviews.total > 0 %}
+    <div class="bg-white rounded-2xl shadow p-5 mb-4">
+      <h2 class="text-lg font-bold mb-4">⭐ Google Reviews — Novas 24h</h2>
+      <div class="flex gap-6 mb-4">
+        <div><p class="text-2xl font-bold text-gray-800">{{ reviews.total }}</p><p class="text-xs text-gray-500">novas avaliações</p></div>
+        <div><p class="text-2xl font-bold text-green-600">{{ reviews.positivas | length }}</p><p class="text-xs text-gray-500">positivas (≥4⭐)</p></div>
+        <div><p class="text-2xl font-bold text-red-600">{{ reviews.negativas | length }}</p><p class="text-xs text-gray-500">negativas (≤2⭐)</p></div>
+      </div>
+      {% if reviews.negativas %}
+      <p class="text-sm font-semibold text-red-600 mb-2">Avaliações negativas — precisam de resposta:</p>
+      <div class="space-y-2">
+        {% for r in reviews.negativas %}
+        <div class="border border-red-100 rounded-lg p-3 bg-red-50 text-sm">
+          <div class="flex justify-between items-start mb-1">
+            <span class="font-semibold">{{ r.get('reviewer', {}).get('displayName', 'Anônimo') }}</span>
+            <span class="text-xs text-gray-400">{{ r.get('_location_title', '') }}</span>
+          </div>
+          <p class="text-gray-700 italic">"{{ r.get('comment', '') | truncate(150) }}"</p>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- ── Agenda e SatisfyCAM detalhado ── -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
+      <!-- Agenda por unidade -->
+      {% if agenda and agenda.unidades %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <h2 class="text-lg font-bold mb-4">📅 Agenda por Unidade</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr class="text-gray-400 border-b">
+              <th class="pb-1 text-left">Unidade</th>
+              <th class="pb-1 text-right">Total</th>
+              <th class="pb-1 text-right">Realiz.</th>
+              <th class="pb-1 text-right">Canc.</th>
+              <th class="pb-1 text-right">No-show</th>
+              <th class="pb-1 text-right">APP</th>
+            </tr></thead>
+            <tbody>
+              {% for u in agenda.unidades | sort(attribute='noshows', reverse=True) %}
+              <tr class="border-t border-gray-50 hover:bg-gray-50">
+                <td class="py-1">{{ u.unidade_nome }}</td>
+                <td class="py-1 text-right">{{ u.total }}</td>
+                <td class="py-1 text-right text-green-600">{{ u.realizados or 0 }}</td>
+                <td class="py-1 text-right text-yellow-600">{{ u.cancelados or 0 }}</td>
+                <td class="py-1 text-right text-red-600 font-bold">{{ u.noshows or 0 }}</td>
+                <td class="py-1 text-right text-blue-600">{{ u.agend_app or 0 }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- SatisfyCAM detalhado -->
+      {% if scam %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <h2 class="text-lg font-bold mb-4">😊 SatisfyCAM — Detalhes</h2>
+        <div class="space-y-3">
+          <div>
+            <div class="flex justify-between text-sm mb-1">
+              <span class="text-green-600 font-semibold">Satisfeitos</span>
+              <span class="font-bold">{{ scam.satisfied }} ({{ scam.pct_satisfied | pct }})</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill bg-green-500" style="width:{{ scam.pct_satisfied }}%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-sm mb-1">
+              <span class="text-gray-500 font-semibold">Neutros</span>
+              <span class="font-bold">{{ scam.neutral }}</span>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-sm mb-1">
+              <span class="text-red-600 font-semibold">Negativos</span>
+              <span class="font-bold">{{ scam.unsatisfied }} ({{ scam.pct_unsatisfied | pct }})</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill bg-red-400" style="width:{{ scam.pct_unsatisfied }}%"></div>
+            </div>
+          </div>
+        </div>
+        {% if scam.alertas %}
+        <p class="text-xs font-semibold text-red-600 mt-4 mb-1">Lojas com mais negativos:</p>
+        {% for a in scam.alertas %}
+        <p class="text-xs text-gray-600">• Loja {{ a.storeId }}: {{ a.total_negativas }} detecções</p>
+        {% endfor %}
+        {% endif %}
+        <p class="text-xs text-gray-400 mt-3">Total detectado: {{ scam.total_clientes }} clientes</p>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- ── Alertas operacionais ── -->
+    {% set ausentes = data.get('barbeiros_ausentes', []) %}
+    {% if ausentes %}
+    <div class="bg-white rounded-2xl shadow p-5 mb-4 border-l-4 border-orange-400">
+      <h2 class="text-lg font-bold mb-3">🚨 Barbeiros sem Caixa Aberto Hoje</h2>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+        {% for a in ausentes %}
+        <div class="text-sm bg-orange-50 rounded-lg p-2">
+          <p class="font-semibold">{{ a.barbeiro_nome }}</p>
+          <p class="text-gray-500 text-xs">{{ a.unidade_nome }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- ── Aniversários ── -->
+    {% set aniversarios = data.get('aniversarios', []) %}
+    {% if aniversarios %}
+    <div class="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl shadow p-5 mb-4">
+      <h2 class="text-lg font-bold mb-3">🎉 Aniversários & Marcos</h2>
+      <div class="space-y-2">
+        {% for a in aniversarios %}
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">{% if a.tipo == 'socio' %}🎂{% else %}🏪{% endif %}</span>
+          <div>
+            {% if a.tipo == 'socio' %}
+            <p class="font-semibold">{{ a.nome }}</p>
+            <p class="text-sm text-gray-500">{{ a.unidade_nome }} — {{ a.anos }} anos</p>
+            {% else %}
+            <p class="font-semibold">{{ a.unidade_nome }}</p>
+            <p class="text-sm text-gray-500">{{ a.anos }} ano(s) de operação!</p>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+  </main>
+
+  <footer class="bg-gray-800 text-gray-400 text-xs text-center py-4">
+    Barbearia VIP — Daily Briefing Automático | Gerado em {{ hoje.strftime('%d/%m/%Y às %H:%M') }}
+  </footer>
+
+</body>
+</html>
