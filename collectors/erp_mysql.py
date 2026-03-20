@@ -46,7 +46,7 @@ def _get_connection():
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
         connect_timeout=10,
-        read_timeout=30,
+        read_timeout=60,
     )
 
 
@@ -78,14 +78,10 @@ def get_media_historica() -> dict[int, float]:
     if not meses:
         return {}
 
-    # Constrói cláusula para os 3 meses
-    where_parts = []
-    params = []
-    for ano, mes in meses:
-        where_parts.append("(YEAR(v.data_criacao) = %s AND MONTH(v.data_criacao) = %s)")
-        params.extend([ano, mes])
-
-    where_clause = " OR ".join(where_parts)
+    # Range: primeiro dia do mês mais antigo até primeiro dia do mês atual
+    ano_ini, mes_ini = meses[-1]  # mês mais antigo
+    data_inicio = date(ano_ini, mes_ini, 1)
+    data_fim = date(hoje.year, hoje.month, 1)  # primeiro dia do mês atual
     n_meses = len(meses)
 
     rows = _query(
@@ -96,12 +92,13 @@ def get_media_historica() -> dict[int, float]:
         FROM vendas v
         JOIN usuarios usr ON usr.id = v.usuario
         JOIN unidades u   ON u.id  = usr.unidade
-        WHERE ({where_clause})
+        WHERE v.data_criacao >= %s
+          AND v.data_criacao <  %s
           AND v.status = 1
           AND v.comanda_temp = 0
         GROUP BY u.id
         """,
-        params,
+        (data_inicio, data_fim),
     )
 
     return {r["unidade_id"]: float(r["media_mensal"] or 0) for r in rows}
@@ -130,6 +127,7 @@ def get_faturamento_ontem(media_hist: dict[int, float] = None) -> dict[str, Any]
         media_hist = {}
 
     ontem = date.today() - timedelta(days=1)
+    ontem_fim = ontem + timedelta(days=1)
     rows = _query(
         """
         SELECT
@@ -143,13 +141,14 @@ def get_faturamento_ontem(media_hist: dict[int, float] = None) -> dict[str, Any]
         FROM vendas v
         JOIN usuarios usr ON usr.id = v.usuario
         JOIN unidades u   ON u.id  = usr.unidade
-        WHERE DATE(v.data_criacao) = %s
+        WHERE v.data_criacao >= %s
+          AND v.data_criacao <  %s
           AND v.status = 1
           AND v.comanda_temp = 0
         GROUP BY u.id, u.nome, u.cidade, u.estado
         ORDER BY faturamento DESC
         """,
-        (ontem,),
+        (ontem, ontem_fim),
     )
 
     if not rows:
@@ -213,6 +212,11 @@ def get_meta_mensal(media_hist: dict[int, float] = None) -> dict:
         media_hist = {}
 
     hoje = date.today()
+    mes_inicio = date(hoje.year, hoje.month, 1)
+    prox_mes = (hoje.month % 12) + 1
+    prox_ano = hoje.year + (1 if prox_mes == 1 else 0)
+    mes_fim = date(prox_ano, prox_mes, 1)
+
     rows = _query(
         """
         SELECT
@@ -223,14 +227,14 @@ def get_meta_mensal(media_hist: dict[int, float] = None) -> dict:
         FROM vendas v
         JOIN usuarios usr ON usr.id = v.usuario
         JOIN unidades u   ON u.id  = usr.unidade
-        WHERE YEAR(v.data_criacao)  = %s
-          AND MONTH(v.data_criacao) = %s
+        WHERE v.data_criacao >= %s
+          AND v.data_criacao <  %s
           AND v.status = 1
           AND v.comanda_temp = 0
         GROUP BY u.id, u.nome
         ORDER BY u.nome
         """,
-        (hoje.year, hoje.month),
+        (mes_inicio, mes_fim),
     )
 
     for r in rows:
@@ -323,6 +327,7 @@ def get_agenda_ontem() -> dict[str, Any]:
     - ocupados: realizados + noshows + fechamentos (todos os slots usados)
     """
     ontem = date.today() - timedelta(days=1)
+    ontem_fim = ontem + timedelta(days=1)
 
     # 1. Total de slots disponíveis por unidade (escala dos barbeiros)
     slots_por_unidade = _get_slots_disponiveis(ontem)
@@ -343,12 +348,12 @@ def get_agenda_ontem() -> dict[str, Any]:
         FROM agendas a
         JOIN usuarios usr ON usr.id = a.colaborador
         JOIN unidades u   ON u.id  = usr.unidade
-        WHERE DATE(a.data) = %s
+        WHERE a.data >= %s AND a.data < %s
           AND a.status = 1
         GROUP BY u.id, u.nome, u.cidade
         ORDER BY u.nome
         """,
-        (ontem,),
+        (ontem, ontem_fim),
     )
 
     # 3. Enriquece cada unidade com total_slots e calcula ocupação
@@ -400,6 +405,7 @@ def get_agenda_hoje() -> dict[str, Any]:
     - ocupacao: agendados / total_slots
     """
     hoje = date.today()
+    hoje_fim = hoje + timedelta(days=1)
     slots_por_unidade = _get_slots_disponiveis(hoje)
 
     rows = _query(
@@ -413,12 +419,12 @@ def get_agenda_hoje() -> dict[str, Any]:
         FROM agendas a
         JOIN usuarios usr ON usr.id = a.colaborador
         JOIN unidades u   ON u.id  = usr.unidade
-        WHERE DATE(a.data) = %s
+        WHERE a.data >= %s AND a.data < %s
           AND a.status = 1
         GROUP BY u.id, u.nome, u.cidade
         ORDER BY u.nome
         """,
-        (hoje,),
+        (hoje, hoje_fim),
     )
 
     for r in rows:
