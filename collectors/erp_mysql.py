@@ -449,10 +449,13 @@ def get_agenda_hoje() -> dict[str, Any]:
 def get_clientes_sem_retorno(dias: int = 45) -> list[dict]:
     """Retorna clientes novos que visitaram há `dias` dias e não retornaram.
 
-    Critério: cliente teve agendamento(s) realizado(s) em uma única data
-    (exatamente `dias` atrás) e nenhum outro agendamento realizado em outra data.
+    Otimização: usa clientes.ultima_visita (mantido pelo ERP) para filtrar
+    apenas os clientes cuja última visita foi na data-alvo. Isso reduz o set
+    de ~250k para centenas antes de verificar se houve visita anterior.
     """
     data_alvo = date.today() - timedelta(days=dias)
+    data_alvo_fim = data_alvo + timedelta(days=1)
+
     rows = _query(
         """
         SELECT
@@ -461,26 +464,22 @@ def get_clientes_sem_retorno(dias: int = 45) -> list[dict]:
             usr.nome     AS barbeiro_nome,
             u.nome       AS unidade_nome,
             u.id         AS unidade_id
-        FROM agendas a
-        JOIN clientes c   ON c.id  = a.cliente
-        JOIN usuarios usr ON usr.id = a.colaborador
-        JOIN unidades u   ON u.id  = usr.unidade
-        WHERE DATE(a.data) = %s
-          AND a.checkin = 1
-          AND a.status  = 1
-          AND a.fechamento IS NULL
+        FROM clientes c
+        JOIN usuarios usr ON usr.id = c.ultima_visita_colaborador
+        JOIN unidades u   ON u.id  = c.ultima_visita_unidade
+        WHERE c.ultima_visita >= %s AND c.ultima_visita < %s
+          AND c.status = 1
           AND NOT EXISTS (
-              SELECT 1 FROM agendas a2
-              WHERE a2.cliente = a.cliente
-                AND a2.checkin = 1
-                AND a2.status  = 1
-                AND a2.fechamento IS NULL
-                AND DATE(a2.data) != %s
+              SELECT 1 FROM agendas a
+              WHERE a.cliente = c.id
+                AND a.checkin = 1
+                AND a.status  = 1
+                AND a.fechamento IS NULL
+                AND a.data < %s
           )
-        GROUP BY c.id, c.nome, c.telefone, usr.nome, u.nome, u.id
         ORDER BY u.nome, c.nome
         """,
-        (data_alvo, data_alvo),
+        (data_alvo, data_alvo_fim, data_alvo),
     )
     return list(rows)
 
