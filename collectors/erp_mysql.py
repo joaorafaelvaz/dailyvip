@@ -449,12 +449,14 @@ def get_agenda_hoje() -> dict[str, Any]:
 def get_clientes_sem_retorno(dias: int = 45) -> list[dict]:
     """Retorna clientes novos que visitaram há `dias` dias e não retornaram.
 
-    Otimização: usa clientes.ultima_visita (mantido pelo ERP) para filtrar
-    apenas os clientes cuja última visita foi na data-alvo. Isso reduz o set
-    de ~250k para centenas antes de verificar se houve visita anterior.
+    Usa apenas a tabela clientes (sem subquery em agendas):
+    - ultima_visita na data-alvo → não voltou depois
+    - data_criacao próxima da ultima_visita → cliente novo (primeira visita)
     """
     data_alvo = date.today() - timedelta(days=dias)
     data_alvo_fim = data_alvo + timedelta(days=1)
+    # Cliente novo: cadastrado até 7 dias antes da visita
+    criacao_inicio = data_alvo - timedelta(days=7)
 
     rows = _query(
         """
@@ -468,18 +470,11 @@ def get_clientes_sem_retorno(dias: int = 45) -> list[dict]:
         JOIN usuarios usr ON usr.id = c.ultima_visita_colaborador
         JOIN unidades u   ON u.id  = c.ultima_visita_unidade
         WHERE c.ultima_visita >= %s AND c.ultima_visita < %s
+          AND c.data_criacao  >= %s
           AND c.status = 1
-          AND NOT EXISTS (
-              SELECT 1 FROM agendas a
-              WHERE a.cliente = c.id
-                AND a.checkin = 1
-                AND a.status  = 1
-                AND a.fechamento IS NULL
-                AND a.data < %s
-          )
         ORDER BY u.nome, c.nome
         """,
-        (data_alvo, data_alvo_fim, data_alvo),
+        (data_alvo, data_alvo_fim, criacao_inicio),
     )
     return list(rows)
 
