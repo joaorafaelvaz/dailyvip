@@ -88,12 +88,6 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
             if total_rede > 0:
                 participacao = (faturamento / total_rede) * 100
                 lines.append(f"Participação na rede: *{participacao:.1f}%*")
-
-            # Ranking
-            ranking = _get_ranking(fat["unidades"], unidade_id)
-            total_unidades = len(fat["unidades"])
-            if ranking:
-                lines.append(f"Ranking: *{ranking}º / {total_unidades}* unidades")
         else:
             lines.append("💰 *FATURAMENTO ONTEM*")
             lines.append("⚠️ _Sem dados de faturamento para esta unidade_")
@@ -152,10 +146,7 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
                 )
 
     # ── Footer ─────────────────────────────────────────────────
-    dashboard_url = data.get("dashboard_url", "")
     lines.append(f"\n{_sep()}")
-    if dashboard_url:
-        lines.append(f"📋 *Dashboard completo:* {dashboard_url}")
     lines.append("_Barbearia VIP — Briefing automático_")
 
     return "\n".join(lines)
