@@ -207,6 +207,7 @@ def compose(data: dict[str, Any]) -> str:
                 lines.append(f"  • {_short_name(u)} — *{u['_ocupacao_pct']:.1f}%*")
 
     # ── Aniversários ──────────────────────────────────────────────────────────
+    aniversarios = data.get("aniversarios", [])
     if aniversarios:
         lines.append(_section("🎉 *ANIVERSÁRIOS / MARCOS*"))
         for a in aniversarios:
