@@ -96,7 +96,7 @@ def get_media_historica() -> dict[int, float]:
         JOIN usuarios usr ON usr.id = v.usuario
         JOIN unidades u   ON u.id  = usr.unidade
         WHERE ({where_clause})
-          AND v.status != 0
+          AND v.status = 1
           AND v.comanda_temp = 0
         GROUP BY u.id
         """,
@@ -143,7 +143,7 @@ def get_faturamento_ontem(media_hist: dict[int, float] = None) -> dict[str, Any]
         JOIN usuarios usr ON usr.id = v.usuario
         JOIN unidades u   ON u.id  = usr.unidade
         WHERE DATE(v.data_criacao) = %s
-          AND v.status != 0
+          AND v.status = 1
           AND v.comanda_temp = 0
         GROUP BY u.id, u.nome, u.cidade, u.estado
         ORDER BY faturamento DESC
@@ -224,7 +224,7 @@ def get_meta_mensal(media_hist: dict[int, float] = None) -> dict:
         JOIN unidades u   ON u.id  = usr.unidade
         WHERE YEAR(v.data_criacao)  = %s
           AND MONTH(v.data_criacao) = %s
-          AND v.status != 0
+          AND v.status = 1
           AND v.comanda_temp = 0
         GROUP BY u.id, u.nome
         ORDER BY u.nome
