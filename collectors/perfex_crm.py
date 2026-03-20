@@ -32,7 +32,7 @@ def get_novos_leads() -> dict[str, Any]:
     ontem = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%d")
 
     page = 1
-    max_pages = 20  # Segurança: nunca mais que 2000 leads por execução
+    max_pages = 5  # Segurança: máx 500 leads (reduzido para evitar 429)
     todos_leads: list[dict] = []
 
     while page <= max_pages:
@@ -66,7 +66,7 @@ def get_novos_leads() -> dict[str, Any]:
         if len(items) < 100:
             break
         page += 1
-        time.sleep(0.3)  # Respeita rate limit
+        time.sleep(1)  # Respeita rate limit (aumentado para evitar 429)
 
     # Novos leads das últimas 24h
     novos = [

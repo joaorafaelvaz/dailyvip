@@ -1,5 +1,6 @@
 """Configurações centralizadas carregadas do .env."""
 
+import json
 import os
 from dotenv import load_dotenv
 
@@ -55,3 +56,24 @@ TIMEZONE = _optional("TIMEZONE", "America/Sao_Paulo")
 DASHBOARD_BASE_URL = _optional("DASHBOARD_BASE_URL", "http://localhost/daily/output")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Mapeamento unidade → grupo WhatsApp do franqueado
+_UNIT_GROUPS_PATH = os.path.join(os.path.dirname(__file__), "config", "unit_groups.json")
+
+
+def load_unit_groups() -> dict[str, dict]:
+    """
+    Carrega mapeamento de unidades para grupos WhatsApp.
+    Retorna dict {unidade_id_str: {"nome": "...", "chat_id": "..."}}.
+    """
+    if not os.path.exists(_UNIT_GROUPS_PATH):
+        return {}
+    try:
+        with open(_UNIT_GROUPS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("units", {})
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+UNIT_GROUPS = load_unit_groups()

@@ -21,7 +21,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 import config
 from collectors import erp_mysql, perfex_crm, satisfycam, google_reviews
-from composers import whatsapp_message, html_dashboard
+from composers import whatsapp_message, html_dashboard, whatsapp_unit_message
 from senders import waha
 
 # ── Logging ─────────────────────────────────────────────────────────────────
@@ -116,19 +116,63 @@ def run_briefing(dry_run: bool = False) -> None:
         logger.error("Falha ao compor mensagem: %s", exc, exc_info=True)
         mensagem = f"⚠️ Erro ao gerar briefing VIP {date.today()}. Verifique daily.log."
 
-    # 4. Envia WhatsApp
+    # 4. Compõe mensagens individuais por unidade
+    unit_messages = {}
+    unit_groups = config.UNIT_GROUPS
+    if unit_groups:
+        for uid_str, group_info in unit_groups.items():
+            try:
+                uid = int(uid_str)
+                nome = group_info.get("nome", f"Unidade #{uid}")
+                chat_id = group_info.get("chat_id", "")
+                if not chat_id:
+                    continue
+                msg = whatsapp_unit_message.compose_for_unit(data, uid, nome)
+                unit_messages[chat_id] = {"nome": nome, "mensagem": msg}
+            except (ValueError, Exception) as exc:
+                logger.warning("Erro ao compor briefing unidade %s: %s", uid_str, exc)
+
+    # 5. Envia WhatsApp
     if dry_run:
         logger.info("DRY RUN — mensagem não enviada.")
         print("\n" + "=" * 60)
+        print("📢 BRIEFING GERAL (Franqueadora)")
+        print("=" * 60)
         print(mensagem)
         print("=" * 60 + "\n")
+
+        if unit_messages:
+            print(f"📍 BRIEFINGS INDIVIDUAIS — {len(unit_messages)} unidade(s)")
+            print("=" * 60)
+            for chat_id, info in list(unit_messages.items())[:3]:
+                print(f"\n--- {info['nome']} ({chat_id}) ---")
+                print(info["mensagem"])
+            if len(unit_messages) > 3:
+                print(f"\n... e mais {len(unit_messages) - 3} unidade(s)")
+            print("=" * 60 + "\n")
+        else:
+            logger.info("Nenhum grupo de unidade configurado em config/unit_groups.json")
     else:
+        # Envia briefing geral para franqueadora
         if not config.WAHA_RECIPIENTS:
             logger.warning("Nenhum destinatário configurado em WAHA_RECIPIENTS.")
         else:
             results = waha.broadcast(mensagem)
             ok = sum(v for v in results.values())
-            logger.info("WhatsApp: %d/%d enviados.", ok, len(results))
+            logger.info("WhatsApp geral: %d/%d enviados.", ok, len(results))
+
+        # Envia briefings individuais para cada franqueado
+        if unit_messages:
+            import time
+            ok_units = 0
+            for chat_id, info in unit_messages.items():
+                success = waha.send_text(chat_id, info["mensagem"])
+                if success:
+                    ok_units += 1
+                time.sleep(1.5)  # Intervalo entre envios para não sobrecarregar WAHA
+            logger.info(
+                "WhatsApp unidades: %d/%d enviados.", ok_units, len(unit_messages)
+            )
 
     logger.info("=== Briefing concluído ===")
 
