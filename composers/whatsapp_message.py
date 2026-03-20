@@ -19,6 +19,18 @@ def _fmt_pct(value) -> str:
     return f"{value:.1f}%"
 
 
+def _short_name(row: dict) -> str:
+    """Retorna nome curto da unidade: 'Cidade - Bairro' ou fallback no nome completo."""
+    cidade = row.get("cidade", "")
+    nome = row.get("unidade_nome", "")
+    # Se tem cidade, extrai o bairro do nome (último segmento após ' - ')
+    if cidade and " - " in nome:
+        parts = nome.split(" - ")
+        bairro = parts[-1].strip()
+        return f"{cidade} - {bairro}"
+    return nome
+
+
 def _sep() -> str:
     return "━━━━━━━━━━━━━━━━━━━━"
 
@@ -47,18 +59,14 @@ def compose(data: dict[str, Any]) -> str:
         lines.append(f"Rede: *{rede_str}* | Ticket médio: {_fmt_brl(fat['ticket_medio_rede'])}")
 
         if fat.get("top5"):
-            top_str = " | ".join(
-                f"{u['unidade_nome']} ({_fmt_pct(u['pct_meta'])})"
-                for u in fat["top5"]
-            )
-            lines.append(f"🏆 Top 5: {top_str}")
+            lines.append("🏆 *Top 5:*")
+            for u in fat["top5"]:
+                lines.append(f"  • {_short_name(u)} — {_fmt_brl(u['faturamento'])} ({_fmt_pct(u['pct_meta'])})")
 
         if fat.get("bottom5"):
-            bot_str = " | ".join(
-                f"{u['unidade_nome']} ({_fmt_pct(u['pct_meta'])})"
-                for u in fat["bottom5"]
-            )
-            lines.append(f"⚠️ Atenção: {bot_str}")
+            lines.append("⚠️ *Atenção:*")
+            for u in fat["bottom5"]:
+                lines.append(f"  • {_short_name(u)} — {_fmt_brl(u['faturamento'])} ({_fmt_pct(u['pct_meta'])})")
     else:
         lines.append("⚠️ _Dados de faturamento indisponíveis_")
 
@@ -115,20 +123,20 @@ def compose(data: dict[str, Any]) -> str:
         roy = inadim.get("royalties", [])
         fundo = inadim.get("fundo_publicidade", [])
         if roy:
-            lines.append(f"🔴 Royalties: *{len(roy)} unidade(s)* em atraso")
+            lines.append(f"🔴 Royalties: *{len(roy)} fatura(s)* em atraso")
             for r in roy[:5]:
                 lines.append(
-                    f"  • {r['unidade_nome']} — {_fmt_brl(r['valor'])} "
+                    f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
                     f"({r['dias_atraso']}d)"
                 )
         else:
             lines.append("✅ Royalties: em dia")
 
         if fundo:
-            lines.append(f"🔴 Fundo Publicidade: *{len(fundo)} unidade(s)* em atraso")
+            lines.append(f"🔴 Fundo Publicidade: *{len(fundo)} fatura(s)* em atraso")
             for r in fundo[:5]:
                 lines.append(
-                    f"  • {r['unidade_nome']} — {_fmt_brl(r['valor'])} "
+                    f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
                     f"({r['dias_atraso']}d)"
                 )
         else:
@@ -175,7 +183,7 @@ def compose(data: dict[str, Any]) -> str:
     if ausentes:
         alertas_lines.append(f"👤 Sem caixa hoje: *{len(ausentes)} barbeiro(s)*")
         for a in ausentes[:5]:
-            alertas_lines.append(f"  • {a['barbeiro_nome']} ({a['unidade_nome']})")
+            alertas_lines.append(f"  • {a['barbeiro_nome']} ({_short_name(a)})")
 
     if alertas_lines:
         lines.append(_section("🚨 *ALERTAS OPERACIONAIS*"))

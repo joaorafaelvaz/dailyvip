@@ -25,24 +25,48 @@ def _get(path: str, params: dict = None) -> Any:
 def get_novos_leads() -> dict[str, Any]:
     """
     Retorna leads criados nas últimas 24h e o funil completo de franqueados.
+    Pagina de forma segura com limite e tratamento de rate-limit (429).
     """
+    import time
+
     ontem = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%d")
 
     page = 1
+    max_pages = 20  # Segurança: nunca mais que 2000 leads por execução
     todos_leads: list[dict] = []
 
-    while True:
-        data = _get("leads", params={"page": page, "per_page": 100})
+    while page <= max_pages:
+        try:
+            data = _get("leads", params={
+                "page": page,
+                "per_page": 100,
+                "sort": "dateadded",
+                "sort_type": "desc",
+            })
+        except requests.exceptions.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 429:
+                logger.warning("Perfex rate limit (429) na página %d — usando dados coletados até aqui.", page)
+                break
+            raise
+
         if not data:
             break
-        # Perfex pode retornar lista direta ou wrapper com 'data'
         items = data if isinstance(data, list) else data.get("data", [])
         if not items:
             break
         todos_leads.extend(items)
+
+        # Se o lead mais antigo desta página já é anterior a 7 dias, podemos parar
+        # (precisamos de um buffer para montar o funil parcial)
+        ultimo_date = items[-1].get("dateadded") or items[-1].get("date_added") or ""
+        cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+        if ultimo_date < cutoff_7d:
+            break
+
         if len(items) < 100:
             break
         page += 1
+        time.sleep(0.3)  # Respeita rate limit
 
     # Novos leads das últimas 24h
     novos = [
