@@ -185,19 +185,26 @@ def compose(data: dict[str, Any]) -> str:
     else:
         lines.append("⚠️ _Google Reviews indisponível_")
 
-    # ── Alertas operacionais ──────────────────────────────────────────────────
-    ausentes = data.get("barbeiros_ausentes", [])
-    aniversarios = data.get("aniversarios", [])
+    # ── Ocupação por unidade (top/bottom) ───────────────────────────────────────
+    if agenda and agenda.get("unidades"):
+        agenda_units = agenda["unidades"]
+        # Calcula ocupação individual e ordena
+        for au in agenda_units:
+            t = int(au.get("total") or 0)
+            r = int(au.get("realizados") or 0)
+            au["_ocupacao_pct"] = round(r / t * 100, 1) if t > 0 else 0
 
-    alertas_lines = []
-    if ausentes:
-        alertas_lines.append(f"👤 Sem caixa hoje: *{len(ausentes)} barbeiro(s)*")
-        for a in ausentes[:5]:
-            alertas_lines.append(f"  • {a['barbeiro_nome']} ({_short_name(a)})")
+        sorted_ocup = sorted(agenda_units, key=lambda x: x["_ocupacao_pct"], reverse=True)
+        com_dados = [u for u in sorted_ocup if u["_ocupacao_pct"] > 0]
 
-    if alertas_lines:
-        lines.append(_section("🚨 *ALERTAS OPERACIONAIS*"))
-        lines.extend(alertas_lines)
+        if com_dados:
+            lines.append(_section("📊 *OCUPAÇÃO POR UNIDADE*"))
+            lines.append("🏆 *Maior ocupação:*")
+            for u in com_dados[:5]:
+                lines.append(f"  • {_short_name(u)} — *{u['_ocupacao_pct']:.1f}%*")
+            lines.append("⚠️ *Menor ocupação:*")
+            for u in com_dados[-5:][::-1]:
+                lines.append(f"  • {_short_name(u)} — *{u['_ocupacao_pct']:.1f}%*")
 
     # ── Aniversários ──────────────────────────────────────────────────────────
     if aniversarios:

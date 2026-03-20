@@ -151,15 +151,6 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
                     f"vencido há *{r['dias_atraso']}* dias"
                 )
 
-    # ── Barbeiros ausentes da unidade ──────────────────────────
-    ausentes = data.get("barbeiros_ausentes", [])
-    ausentes_unit = [a for a in ausentes if _matches_unit(a, unidade_id, unidade_nome)]
-    if ausentes_unit:
-        lines.append(f"\n{_sep()}")
-        lines.append(f"🚨 *SEM CAIXA ABERTO HOJE*: {len(ausentes_unit)} barbeiro(s)")
-        for a in ausentes_unit:
-            lines.append(f"  • {a['barbeiro_nome']}")
-
     # ── Footer ─────────────────────────────────────────────────
     dashboard_url = data.get("dashboard_url", "")
     lines.append(f"\n{_sep()}")

@@ -274,6 +274,7 @@ def get_agenda_ontem() -> dict[str, Any]:
         SELECT
             u.id   AS unidade_id,
             u.nome AS unidade_nome,
+            u.cidade,
             COUNT(a.id)                              AS total,
             SUM(a.checkin = 1)                       AS realizados,
             SUM(a.status = 0)                        AS cancelados,
@@ -284,7 +285,7 @@ def get_agenda_ontem() -> dict[str, Any]:
         JOIN usuarios usr ON usr.id = a.colaborador
         JOIN unidades u   ON u.id  = usr.unidade
         WHERE DATE(a.data) = %s
-        GROUP BY u.id, u.nome
+        GROUP BY u.id, u.nome, u.cidade
         ORDER BY u.nome
         """,
         (ontem,),
@@ -436,7 +437,6 @@ def collect_all() -> dict[str, Any]:
         "faturamento": lambda: get_faturamento_ontem(media_hist),
         "meta_mensal": lambda: get_meta_mensal(media_hist),
         "agenda": get_agenda_ontem,
-        "barbeiros_ausentes": get_barbeiros_ausentes,
         "inadimplencia": get_royalties_inadimplentes,
         "aniversarios": get_aniversarios_hoje,
     }
