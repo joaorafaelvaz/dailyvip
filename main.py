@@ -27,13 +27,16 @@ from senders import waha
 # ── Logging ─────────────────────────────────────────────────────────────────
 _LOG_FILE = os.path.join(os.path.dirname(__file__), "daily.log")
 
+_handlers = [logging.StreamHandler(sys.stdout)]
+try:
+    _handlers.insert(0, RotatingFileHandler(_LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=7))
+except PermissionError:
+    print(f"[WARN] Sem permissão para {_LOG_FILE} — log apenas no stdout", file=sys.stderr)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-    handlers=[
-        RotatingFileHandler(_LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=7),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=_handlers,
 )
 logger = logging.getLogger("briefing")
 
