@@ -17,6 +17,9 @@ warn() { echo -e "${YELLOW}[deploy]${NC} $*"; }
 
 info "Iniciando deploy — $(date '+%Y-%m-%d %H:%M:%S')"
 
+# Garante que root pode operar no diretório independente do owner
+git config --global --add safe.directory "$APP_DIR"
+
 # 1. Atualiza código
 info "git pull..."
 git -C "$APP_DIR" fetch origin

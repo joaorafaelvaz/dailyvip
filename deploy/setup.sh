@@ -39,6 +39,9 @@ if ! id "$APP_USER" &>/dev/null; then
 fi
 
 # ── 3. Diretório da aplicação ─────────────────────────────────────────────────
+# Garante que root pode operar no diretório independente do owner
+git config --global --add safe.directory "$APP_DIR"
+
 info "Clonando repositório em $APP_DIR..."
 if [[ -d "$APP_DIR/.git" ]]; then
     warn "Repositório já existe. Fazendo pull..."
