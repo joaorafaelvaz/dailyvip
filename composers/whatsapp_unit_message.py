@@ -122,6 +122,34 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
     else:
         lines.append("⚠️ _Dados indisponíveis_")
 
+    # ── Agenda hoje (prévia da unidade) ─────────────────────────
+    agenda_hoje = data.get("agenda_hoje")
+    if agenda_hoje and agenda_hoje.get("unidades"):
+        unit_hoje = _find_unit(agenda_hoje["unidades"], unidade_id)
+        if unit_hoje:
+            h_slots = int(unit_hoje.get("total_slots") or 0)
+            h_agend = int(unit_hoje.get("agendados") or 0)
+            h_ocup = float(unit_hoje.get("ocupacao_pct") or 0)
+            h_rede = float(agenda_hoje.get("ocupacao_rede_pct") or 0)
+            lines.append(f"\n{_sep()}")
+            lines.append("📅 *AGENDA HOJE (prévia)*")
+            lines.append(f"Ocupação: *{h_ocup:.1f}%* ({h_agend}/{h_slots} slots)")
+            lines.append(f"Ocupação rede: {h_rede:.1f}%")
+
+    # ── Clientes sem retorno (45 dias) ────────────────────────
+    sem_retorno = data.get("clientes_sem_retorno", [])
+    unit_sem_retorno = [c for c in sem_retorno if c.get("unidade_id") == unidade_id]
+    if unit_sem_retorno:
+        lines.append(f"\n{_sep()}")
+        lines.append(f"🔄 *CLIENTES SEM RETORNO — 45 DIAS* ({len(unit_sem_retorno)})")
+        for c in unit_sem_retorno[:15]:
+            lines.append(
+                f"  • {c['cliente_nome']} — {c.get('cliente_telefone', '')} "
+                f"({c['barbeiro_nome']})"
+            )
+        if len(unit_sem_retorno) > 15:
+            lines.append(f"  _... e mais {len(unit_sem_retorno) - 15}_")
+
     # ── Inadimplência da unidade ───────────────────────────────
     inadim = data.get("inadimplencia")
     if inadim:

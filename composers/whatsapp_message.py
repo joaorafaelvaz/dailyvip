@@ -188,6 +188,47 @@ def compose(data: dict[str, Any]) -> str:
     else:
         lines.append("⚠️ _Google Reviews indisponível_")
 
+    # ── Agenda hoje (prévia) ────────────────────────────────────────────────────
+    agenda_hoje = data.get("agenda_hoje")
+    lines.append(_section("📅 *AGENDA HOJE (prévia)*"))
+    if agenda_hoje:
+        lines.append(
+            f"Ocupação rede: *{_fmt_pct(agenda_hoje['ocupacao_rede_pct'])}* "
+            f"({agenda_hoje['total_agendados']}/{agenda_hoje['total_slots']} slots)"
+        )
+        if agenda_hoje.get("unidades"):
+            sorted_hoje = sorted(
+                agenda_hoje["unidades"],
+                key=lambda x: float(x.get("ocupacao_pct") or 0),
+            )
+            baixa = [u for u in sorted_hoje if float(u.get("ocupacao_pct") or 0) < 50]
+            if baixa:
+                lines.append("⚠️ *Baixa ocupação (<50%):*")
+                for u in baixa[:10]:
+                    lines.append(f"  • {_short_name(u)} — *{u['ocupacao_pct']:.1f}%*")
+    else:
+        lines.append("⚠️ _Dados indisponíveis_")
+
+    # ── Clientes sem retorno (45 dias) ───────────────────────────────────────
+    sem_retorno = data.get("clientes_sem_retorno", [])
+    if sem_retorno:
+        lines.append(_section("🔄 *CLIENTES SEM RETORNO (45 DIAS)*"))
+        lines.append(f"Total: *{len(sem_retorno)}* clientes novos não retornaram")
+        # Agrupa por unidade
+        from collections import defaultdict
+        por_unidade = defaultdict(list)
+        for c in sem_retorno:
+            por_unidade[c.get("unidade_nome", "?")].append(c)
+        for unidade, clientes in sorted(por_unidade.items()):
+            lines.append(f"\n📍 *{unidade}* ({len(clientes)}):")
+            for c in clientes[:10]:
+                lines.append(
+                    f"  • {c['cliente_nome']} — {c.get('cliente_telefone', '')} "
+                    f"(atendido por {c['barbeiro_nome']})"
+                )
+            if len(clientes) > 10:
+                lines.append(f"  _... e mais {len(clientes) - 10}_")
+
     # ── Ocupação por unidade (top/bottom) ───────────────────────────────────────
     if agenda and agenda.get("unidades"):
         agenda_units = agenda["unidades"]

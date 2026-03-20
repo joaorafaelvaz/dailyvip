@@ -390,6 +390,101 @@ def get_agenda_ontem() -> dict[str, Any]:
     }
 
 
+def get_agenda_hoje() -> dict[str, Any]:
+    """Retorna ocupação da agenda de HOJE por unidade (prévia do dia).
+
+    Como o dia ainda está em andamento, mostra:
+    - total_slots: capacidade total
+    - agendados: slots com algum registro (cliente ou fechamento)
+    - ocupacao: agendados / total_slots
+    """
+    hoje = date.today()
+    slots_por_unidade = _get_slots_disponiveis(hoje)
+
+    rows = _query(
+        """
+        SELECT
+            u.id   AS unidade_id,
+            u.nome AS unidade_nome,
+            u.cidade,
+            COUNT(a.id)                        AS agendados,
+            SUM(a.fechamento IS NOT NULL)       AS fechamentos
+        FROM agendas a
+        JOIN usuarios usr ON usr.id = a.colaborador
+        JOIN unidades u   ON u.id  = usr.unidade
+        WHERE DATE(a.data) = %s
+          AND a.status = 1
+        GROUP BY u.id, u.nome, u.cidade
+        ORDER BY u.nome
+        """,
+        (hoje,),
+    )
+
+    for r in rows:
+        uid = r["unidade_id"]
+        r["total_slots"] = slots_por_unidade.get(uid, 0)
+        agendados = int(r["agendados"] or 0)
+        r["ocupacao_pct"] = (
+            round(agendados / r["total_slots"] * 100, 1)
+            if r["total_slots"] > 0
+            else 0
+        )
+
+    total_slots = sum(r["total_slots"] for r in rows)
+    total_agendados = sum(int(r["agendados"] or 0) for r in rows)
+
+    return {
+        "data": str(hoje),
+        "total_slots": total_slots,
+        "total_agendados": total_agendados,
+        "ocupacao_rede_pct": (
+            round(total_agendados / total_slots * 100, 1)
+            if total_slots
+            else 0
+        ),
+        "unidades": rows,
+    }
+
+
+def get_clientes_sem_retorno(dias: int = 45) -> list[dict]:
+    """Retorna clientes novos que visitaram há `dias` dias e não retornaram.
+
+    Critério: cliente teve agendamento(s) realizado(s) em uma única data
+    (exatamente `dias` atrás) e nenhum outro agendamento realizado em outra data.
+    """
+    data_alvo = date.today() - timedelta(days=dias)
+    rows = _query(
+        """
+        SELECT
+            c.nome       AS cliente_nome,
+            c.telefone   AS cliente_telefone,
+            usr.nome     AS barbeiro_nome,
+            u.nome       AS unidade_nome,
+            u.id         AS unidade_id
+        FROM agendas a
+        JOIN clientes c   ON c.id  = a.cliente
+        JOIN usuarios usr ON usr.id = a.colaborador
+        JOIN unidades u   ON u.id  = usr.unidade
+        WHERE DATE(a.data) = %s
+          AND a.checkin = 1
+          AND a.status  = 1
+          AND a.fechamento IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM agendas a2
+              WHERE a2.cliente = a.cliente
+                AND a2.checkin = 1
+                AND a2.status  = 1
+                AND a2.fechamento IS NULL
+                AND DATE(a2.data) != %s
+          )
+        GROUP BY c.id, c.nome, c.telefone, usr.nome, u.nome, u.id
+        ORDER BY u.nome, c.nome
+        """,
+        (data_alvo, data_alvo),
+    )
+    return list(rows)
+
+
 def get_barbeiros_ausentes() -> list[dict]:
     """Retorna colaboradores que não abriram caixa hoje."""
     hoje = date.today()
@@ -510,6 +605,8 @@ def collect_all() -> dict[str, Any]:
         "faturamento": lambda: get_faturamento_ontem(media_hist),
         "meta_mensal": lambda: get_meta_mensal(media_hist),
         "agenda": get_agenda_ontem,
+        "agenda_hoje": get_agenda_hoje,
+        "clientes_sem_retorno": get_clientes_sem_retorno,
         "inadimplencia": get_royalties_inadimplentes,
         "aniversarios": get_aniversarios_hoje,
     }

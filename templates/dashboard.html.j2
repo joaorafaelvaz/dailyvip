@@ -349,6 +349,79 @@
 
     </div>
 
+    <!-- ── Agenda Hoje (prévia) ── -->
+    {% set agenda_hoje = data.get('agenda_hoje') %}
+    {% if agenda_hoje and agenda_hoje.unidades %}
+    <div class="bg-white rounded-2xl shadow p-5 mb-4 border-l-4 border-blue-400">
+      <h2 class="text-lg font-bold mb-2">📅 Agenda Hoje (prévia)</h2>
+      <p class="text-xs text-gray-500 mb-3">
+        Rede: <span class="font-bold {% if agenda_hoje.ocupacao_rede_pct >= 70 %}text-green-600{% elif agenda_hoje.ocupacao_rede_pct >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+          {{ agenda_hoje.ocupacao_rede_pct | pct }}
+        </span> ocupação
+        ({{ agenda_hoje.total_agendados or 0 }}/{{ agenda_hoje.total_slots or 0 }} slots)
+      </p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead><tr class="text-gray-400 border-b">
+            <th class="pb-1 text-left">Unidade</th>
+            <th class="pb-1 text-right">Ocupação</th>
+            <th class="pb-1 w-24"></th>
+            <th class="pb-1 text-right">Agendados/Slots</th>
+          </tr></thead>
+          <tbody>
+            {% for u in agenda_hoje.unidades | sort(attribute='ocupacao_pct', reverse=True) %}
+            {% set ocup = u.ocupacao_pct or 0 %}
+            <tr class="border-t border-gray-50 hover:bg-gray-50">
+              <td class="py-1 font-medium">{{ u.unidade_nome }}</td>
+              <td class="py-1 text-right font-bold {% if ocup >= 70 %}text-green-600{% elif ocup >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                {{ ocup | pct }}
+              </td>
+              <td class="py-1 px-1">
+                <div class="progress-bar">
+                  <div class="progress-fill {% if ocup >= 70 %}bg-green-500{% elif ocup >= 50 %}bg-yellow-400{% else %}bg-red-400{% endif %}"
+                       style="width: {{ [ocup, 100] | min }}%"></div>
+                </div>
+              </td>
+              <td class="py-1 text-right text-gray-500">{{ u.agendados or 0 }}/{{ u.total_slots or 0 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- ── Clientes sem retorno (45 dias) ── -->
+    {% set sem_retorno = data.get('clientes_sem_retorno', []) %}
+    {% if sem_retorno %}
+    <div class="bg-white rounded-2xl shadow p-5 mb-4 border-l-4 border-yellow-400">
+      <h2 class="text-lg font-bold mb-2">🔄 Clientes Sem Retorno — 45 dias</h2>
+      <p class="text-xs text-gray-500 mb-3">
+        <span class="font-bold text-yellow-600">{{ sem_retorno | length }}</span> clientes novos visitaram há 45 dias e não retornaram
+      </p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead><tr class="text-gray-400 border-b">
+            <th class="pb-1 text-left">Cliente</th>
+            <th class="pb-1 text-left">Telefone</th>
+            <th class="pb-1 text-left">Barbeiro</th>
+            <th class="pb-1 text-left">Unidade</th>
+          </tr></thead>
+          <tbody>
+            {% for c in sem_retorno %}
+            <tr class="border-t border-gray-50 hover:bg-gray-50">
+              <td class="py-1 font-medium">{{ c.cliente_nome }}</td>
+              <td class="py-1 text-gray-600">{{ c.cliente_telefone or '—' }}</td>
+              <td class="py-1 text-gray-600">{{ c.barbeiro_nome }}</td>
+              <td class="py-1 text-gray-500">{{ c.unidade_nome }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- ── Alertas operacionais ── -->
     {% set ausentes = data.get('barbeiros_ausentes', []) %}
     {% if ausentes %}
