@@ -68,7 +68,7 @@
           {{ agenda.ocupacao_rede_pct | pct if agenda else '--' }}
         </p>
         <p class="text-xs text-gray-400 mt-1">
-          No-shows: {{ agenda.total_noshows if agenda else 0 }} | Cancelados: {{ agenda.total_cancelados if agenda else 0 }}
+          {{ agenda.total_ocupados if agenda else 0 }}/{{ agenda.total_slots if agenda else 0 }} slots | No-shows: {{ agenda.total_noshows if agenda else 0 }}
         </p>
       </div>
 
@@ -259,25 +259,46 @@
       {% if agenda and agenda.unidades %}
       <div class="bg-white rounded-2xl shadow p-5">
         <h2 class="text-lg font-bold mb-4">📅 Agenda por Unidade</h2>
+        <p class="text-xs text-gray-500 mb-3">
+          Rede: <span class="font-bold">{{ agenda.ocupacao_rede_pct | pct }}</span> ocupação
+          ({{ agenda.total_ocupados or 0 }}/{{ agenda.total_slots or 0 }} slots)
+          · {{ agenda.total_realizados or 0 }} realizados
+          · {{ agenda.total_noshows or 0 }} no-shows
+          · {{ agenda.total_fechamentos or 0 }} fechamentos
+        </p>
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
             <thead><tr class="text-gray-400 border-b">
               <th class="pb-1 text-left">Unidade</th>
-              <th class="pb-1 text-right">Total</th>
+              <th class="pb-1 text-right">Ocupação</th>
+              <th class="pb-1 w-24"></th>
+              <th class="pb-1 text-right">Slots</th>
               <th class="pb-1 text-right">Realiz.</th>
-              <th class="pb-1 text-right">Canc.</th>
               <th class="pb-1 text-right">No-show</th>
+              <th class="pb-1 text-right">Fech.</th>
               <th class="pb-1 text-right">APP</th>
+              <th class="pb-1 text-right">Recep.</th>
             </tr></thead>
             <tbody>
-              {% for u in agenda.unidades | sort(attribute='noshows', reverse=True) %}
+              {% for u in agenda.unidades | sort(attribute='ocupacao_pct', reverse=True) %}
+              {% set ocup = u.ocupacao_pct or 0 %}
               <tr class="border-t border-gray-50 hover:bg-gray-50">
-                <td class="py-1">{{ u.unidade_nome }}</td>
-                <td class="py-1 text-right">{{ u.total }}</td>
+                <td class="py-1 font-medium">{{ u.unidade_nome }}</td>
+                <td class="py-1 text-right font-bold {% if ocup >= 70 %}text-green-600{% elif ocup >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                  {{ ocup | pct }}
+                </td>
+                <td class="py-1 px-1">
+                  <div class="progress-bar">
+                    <div class="progress-fill {% if ocup >= 70 %}bg-green-500{% elif ocup >= 50 %}bg-yellow-400{% else %}bg-red-400{% endif %}"
+                         style="width: {{ [ocup, 100] | min }}%"></div>
+                  </div>
+                </td>
+                <td class="py-1 text-right text-gray-500">{{ u.ocupados or 0 }}/{{ u.total_slots or 0 }}</td>
                 <td class="py-1 text-right text-green-600">{{ u.realizados or 0 }}</td>
-                <td class="py-1 text-right text-yellow-600">{{ u.cancelados or 0 }}</td>
-                <td class="py-1 text-right text-red-600 font-bold">{{ u.noshows or 0 }}</td>
+                <td class="py-1 text-right text-red-600 {% if (u.noshows or 0) > 0 %}font-bold{% endif %}">{{ u.noshows or 0 }}</td>
+                <td class="py-1 text-right text-gray-400">{{ u.fechamentos or 0 }}</td>
                 <td class="py-1 text-right text-blue-600">{{ u.agend_app or 0 }}</td>
+                <td class="py-1 text-right text-gray-500">{{ u.agend_recepcao or 0 }}</td>
               </tr>
               {% endfor %}
             </tbody>
