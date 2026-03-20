@@ -58,15 +58,23 @@ def compose(data: dict[str, Any]) -> str:
         rede_str = _fmt_brl(fat["total_rede"])
         lines.append(f"Rede: *{rede_str}* | Ticket médio: {_fmt_brl(fat['ticket_medio_rede'])}")
 
+        # Meta diária da rede (se disponível)
+        if fat.get("meta_diaria_rede") and fat.get("pct_meta_rede"):
+            lines.append(
+                f"Meta dia: {_fmt_brl(fat['meta_diaria_rede'])} → *{_fmt_pct(fat['pct_meta_rede'])}*"
+            )
+
         if fat.get("top5"):
             lines.append("🏆 *Top 5:*")
             for u in fat["top5"]:
-                lines.append(f"  • {_short_name(u)} — {_fmt_brl(u['faturamento'])} ({_fmt_pct(u['pct_meta'])})")
+                meta_tag = f" ({_fmt_pct(u['pct_meta'])} da meta)" if u.get("pct_meta") else ""
+                lines.append(f"  • {_short_name(u)} — {_fmt_brl(u['faturamento'])}{meta_tag}")
 
         if fat.get("bottom5"):
             lines.append("⚠️ *Atenção:*")
             for u in fat["bottom5"]:
-                lines.append(f"  • {_short_name(u)} — {_fmt_brl(u['faturamento'])} ({_fmt_pct(u['pct_meta'])})")
+                meta_tag = f" ({_fmt_pct(u['pct_meta'])} da meta)" if u.get("pct_meta") else ""
+                lines.append(f"  • {_short_name(u)} — {_fmt_brl(u['faturamento'])}{meta_tag}")
     else:
         lines.append("⚠️ _Dados de faturamento indisponíveis_")
 
@@ -77,7 +85,9 @@ def compose(data: dict[str, Any]) -> str:
         acum = _fmt_brl(meta["acumulado_rede"])
         meta_total = _fmt_brl(meta["meta_rede"])
         pct = _fmt_pct(meta["pct_rede"])
+        pct_corrido = _fmt_pct(meta.get("pct_mes_corrido"))
         lines.append(f"Acumulado: *{acum}* / {meta_total} → *{pct}*")
+        lines.append(f"📅 Mês corrido: {pct_corrido} | _Meta baseada na média 3 meses_")
     else:
         lines.append("⚠️ _Dados de meta indisponíveis_")
 

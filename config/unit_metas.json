@@ -1,0 +1,9 @@
+{
+  "_doc": "Meta mensal manual por unidade (em R$). Quando definida, sobrescreve a média histórica.",
+  "_instrucoes": "Preencha o valor da meta mensal de cada unidade. Unidades sem meta aqui usarão a média dos últimos 3 meses.",
+  "_exemplo": {
+    "1": {"nome": "Florianópolis - Santa Mônica", "meta_mensal": 180000},
+    "2": {"nome": "Joinville - América", "meta_mensal": 90000}
+  },
+  "units": {}
+}

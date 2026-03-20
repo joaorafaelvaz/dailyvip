@@ -1,8 +1,11 @@
 """Coleta dados do ERP MySQL (franquia_producao)."""
 
+import calendar
+import json
 import logging
+import os
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Optional
 
 import pymysql
 import pymysql.cursors
@@ -11,6 +14,27 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# ── Metas manuais (carregadas de config/unit_metas.json) ────────────────────
+_METAS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "unit_metas.json")
+
+
+def _load_manual_metas() -> dict[int, float]:
+    """Retorna {unidade_id: meta_mensal_reais} das metas definidas manualmente."""
+    if not os.path.exists(_METAS_PATH):
+        return {}
+    try:
+        with open(_METAS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        units = data.get("units", {})
+        return {int(k): float(v["meta_mensal"]) for k, v in units.items() if v.get("meta_mensal")}
+    except (json.JSONDecodeError, IOError, ValueError):
+        return {}
+
+
+MANUAL_METAS = _load_manual_metas()
+
+
+# ── Conexão MySQL ────────────────────────────────────────────────────────────
 
 def _get_connection():
     return pymysql.connect(
@@ -32,11 +56,78 @@ def _query(sql: str, args=None) -> list[dict]:
             return cur.fetchall()
 
 
-def get_faturamento_ontem() -> dict[str, Any]:
+# ── Meta automática: média dos últimos 3 meses ──────────────────────────────
+
+def get_media_historica() -> dict[int, float]:
+    """
+    Calcula a média mensal de faturamento dos últimos 3 meses completos
+    por unidade. Usado como meta quando não há meta manual definida.
+    """
+    hoje = date.today()
+    # Últimos 3 meses completos (exclui o mês atual)
+    meses = []
+    for i in range(1, 4):
+        ano = hoje.year
+        mes = hoje.month - i
+        while mes <= 0:
+            mes += 12
+            ano -= 1
+        meses.append((ano, mes))
+
+    if not meses:
+        return {}
+
+    # Constrói cláusula para os 3 meses
+    where_parts = []
+    params = []
+    for ano, mes in meses:
+        where_parts.append("(YEAR(v.data_criacao) = %s AND MONTH(v.data_criacao) = %s)")
+        params.extend([ano, mes])
+
+    where_clause = " OR ".join(where_parts)
+    n_meses = len(meses)
+
+    rows = _query(
+        f"""
+        SELECT
+            u.id AS unidade_id,
+            SUM(v.valor_total) / {n_meses} AS media_mensal
+        FROM vendas v
+        JOIN usuarios usr ON usr.id = v.usuario
+        JOIN unidades u   ON u.id  = usr.unidade
+        WHERE ({where_clause})
+          AND v.status != 0
+          AND v.comanda_temp = 0
+        GROUP BY u.id
+        """,
+        params,
+    )
+
+    return {r["unidade_id"]: float(r["media_mensal"] or 0) for r in rows}
+
+
+def _resolve_meta(unidade_id: int, media_hist: dict[int, float]) -> Optional[float]:
+    """
+    Retorna a meta mensal para uma unidade.
+    Prioridade: 1) meta manual → 2) média histórica → 3) None
+    """
+    if unidade_id in MANUAL_METAS:
+        return MANUAL_METAS[unidade_id]
+    if unidade_id in media_hist:
+        return media_hist[unidade_id]
+    return None
+
+
+# ── Collectors ───────────────────────────────────────────────────────────────
+
+def get_faturamento_ontem(media_hist: dict[int, float] = None) -> dict[str, Any]:
     """
     Retorna faturamento do dia anterior por unidade.
-    Inclui top5, bottom5, totais da rede e ticket médio.
+    Meta = manual (se definida) ou média últimos 3 meses.
     """
+    if media_hist is None:
+        media_hist = {}
+
     ontem = date.today() - timedelta(days=1)
     rows = _query(
         """
@@ -45,7 +136,6 @@ def get_faturamento_ontem() -> dict[str, Any]:
             u.nome          AS unidade_nome,
             u.cidade,
             u.estado,
-            COALESCE(u.potencial_franquia, 0) AS meta_mensal,
             SUM(v.valor_total)               AS faturamento,
             COUNT(v.id)                      AS total_vendas,
             SUM(v.valor_total) / COUNT(v.id) AS ticket_medio
@@ -55,7 +145,7 @@ def get_faturamento_ontem() -> dict[str, Any]:
         WHERE DATE(v.data_criacao) = %s
           AND v.status != 0
           AND v.comanda_temp = 0
-        GROUP BY u.id, u.nome, u.cidade, u.estado, u.potencial_franquia
+        GROUP BY u.id, u.nome, u.cidade, u.estado
         ORDER BY faturamento DESC
         """,
         (ontem,),
@@ -71,22 +161,33 @@ def get_faturamento_ontem() -> dict[str, Any]:
             "ticket_medio_rede": 0,
         }
 
-    # Calcula meta diária proporcional (meta_mensal / dias_no_mes)
-    import calendar
     dias_mes = calendar.monthrange(ontem.year, ontem.month)[1]
+
     for r in rows:
-        r["meta_diaria"] = r["meta_mensal"] / dias_mes if r["meta_mensal"] else 0
+        uid = r["unidade_id"]
+        meta_mensal = _resolve_meta(uid, media_hist)
+        r["meta_mensal"] = round(meta_mensal, 2) if meta_mensal else None
+        r["meta_origem"] = (
+            "manual" if uid in MANUAL_METAS
+            else "historica" if uid in media_hist
+            else None
+        )
+        r["meta_diaria"] = meta_mensal / dias_mes if meta_mensal else None
         r["pct_meta"] = (
-            round(r["faturamento"] / r["meta_diaria"] * 100, 1)
+            round(float(r["faturamento"]) / r["meta_diaria"] * 100, 1)
             if r["meta_diaria"]
             else None
         )
 
-    total_rede = sum(r["faturamento"] for r in rows)
+    total_rede = sum(float(r["faturamento"]) for r in rows)
     total_vendas_rede = sum(r["total_vendas"] for r in rows)
     ticket_medio_rede = total_rede / total_vendas_rede if total_vendas_rede else 0
 
-    # Ordena por % de meta para top/bottom (apenas unidades com meta definida)
+    # Meta total da rede
+    meta_total_rede = sum(r["meta_mensal"] for r in rows if r["meta_mensal"])
+    meta_diaria_rede = meta_total_rede / dias_mes if meta_total_rede else None
+
+    # Ordena por % de meta para top/bottom
     com_meta = [r for r in rows if r["pct_meta"] is not None]
     com_meta_sorted = sorted(com_meta, key=lambda x: x["pct_meta"], reverse=True)
 
@@ -95,21 +196,27 @@ def get_faturamento_ontem() -> dict[str, Any]:
         "total_rede": round(total_rede, 2),
         "total_vendas_rede": total_vendas_rede,
         "ticket_medio_rede": round(ticket_medio_rede, 2),
+        "meta_diaria_rede": round(meta_diaria_rede, 2) if meta_diaria_rede else None,
+        "pct_meta_rede": (
+            round(total_rede / meta_diaria_rede * 100, 1) if meta_diaria_rede else None
+        ),
         "unidades": rows,
         "top5": com_meta_sorted[:5],
         "bottom5": com_meta_sorted[-5:][::-1],
     }
 
 
-def get_meta_mensal() -> list[dict]:
+def get_meta_mensal(media_hist: dict[int, float] = None) -> dict:
     """Retorna acumulado do mês corrente vs meta por unidade."""
+    if media_hist is None:
+        media_hist = {}
+
     hoje = date.today()
     rows = _query(
         """
         SELECT
             u.id            AS unidade_id,
             u.nome          AS unidade_nome,
-            COALESCE(u.potencial_franquia, 0) AS meta_mensal,
             SUM(v.valor_total)               AS acumulado_mes,
             COUNT(v.id)                      AS total_vendas_mes
         FROM vendas v
@@ -119,21 +226,34 @@ def get_meta_mensal() -> list[dict]:
           AND MONTH(v.data_criacao) = %s
           AND v.status != 0
           AND v.comanda_temp = 0
-        GROUP BY u.id, u.nome, u.potencial_franquia
+        GROUP BY u.id, u.nome
         ORDER BY u.nome
         """,
         (hoje.year, hoje.month),
     )
 
-    total_rede_mes = sum(r["acumulado_mes"] for r in rows)
-    total_meta_rede = sum(r["meta_mensal"] for r in rows)
-
     for r in rows:
-        r["pct_meta_mensal"] = (
-            round(r["acumulado_mes"] / r["meta_mensal"] * 100, 1)
-            if r["meta_mensal"]
+        uid = r["unidade_id"]
+        meta = _resolve_meta(uid, media_hist)
+        r["meta_mensal"] = round(meta, 2) if meta else None
+        r["meta_origem"] = (
+            "manual" if uid in MANUAL_METAS
+            else "historica" if uid in media_hist
             else None
         )
+        r["pct_meta_mensal"] = (
+            round(float(r["acumulado_mes"]) / meta * 100, 1)
+            if meta
+            else None
+        )
+
+    total_rede_mes = sum(float(r["acumulado_mes"]) for r in rows)
+    total_meta_rede = sum(r["meta_mensal"] for r in rows if r["meta_mensal"])
+
+    # Dias corridos / dias no mês (para calcular % esperado)
+    dias_corridos = hoje.day
+    dias_mes = calendar.monthrange(hoje.year, hoje.month)[1]
+    pct_mes_corrido = round(dias_corridos / dias_mes * 100, 1)
 
     return {
         "acumulado_rede": round(total_rede_mes, 2),
@@ -141,6 +261,7 @@ def get_meta_mensal() -> list[dict]:
         "pct_rede": (
             round(total_rede_mes / total_meta_rede * 100, 1) if total_meta_rede else None
         ),
+        "pct_mes_corrido": pct_mes_corrido,
         "unidades": rows,
     }
 
@@ -300,9 +421,20 @@ def collect_all() -> dict[str, Any]:
     """Executa todas as queries e retorna dict consolidado. Falhas parciais são logadas."""
     result = {}
 
+    # Carrega médias históricas primeiro (usado como fallback de meta)
+    media_hist = {}
+    try:
+        media_hist = get_media_historica()
+        logger.info(
+            "Médias históricas carregadas: %d unidades (metas manuais: %d)",
+            len(media_hist), len(MANUAL_METAS),
+        )
+    except Exception as exc:
+        logger.error("Falha ao carregar médias históricas: %s", exc, exc_info=True)
+
     collectors = {
-        "faturamento": get_faturamento_ontem,
-        "meta_mensal": get_meta_mensal,
+        "faturamento": lambda: get_faturamento_ontem(media_hist),
+        "meta_mensal": lambda: get_meta_mensal(media_hist),
         "agenda": get_agenda_ontem,
         "barbeiros_ausentes": get_barbeiros_ausentes,
         "inadimplencia": get_royalties_inadimplentes,
