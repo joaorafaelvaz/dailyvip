@@ -2,6 +2,22 @@
   "_doc": "Mapeamento unidade_id → grupo WhatsApp do franqueado.",
   "_instrucoes": "chat_id formato: '5548999999999-1234567890@g.us' (grupo) ou '5548999999999@c.us' (direto)",
   "units": {
+    "1": {
+      "nome": "Florianópolis - Santa Mônica",
+      "chat_id": "120363407921071760@g.us"
+    },
+    "19": {
+      "nome": "Ubá - Centro",
+      "chat_id": "120363407921071760@g.us"
+    },
+    "24": {
+      "nome": "Criciúma - Michel",
+      "chat_id": "120363407921071760@g.us"
+    },
+    "27": {
+      "nome": "Barbacena - Centro",
+      "chat_id": "120363407921071760@g.us"
+    },
     "29": {
       "nome": "Joinville - América",
       "chat_id": "TESTE_JOINVILLE@g.us"
