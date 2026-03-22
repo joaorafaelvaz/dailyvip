@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import date, timedelta
 from logging.handlers import RotatingFileHandler
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -21,7 +21,11 @@ from apscheduler.triggers.cron import CronTrigger
 
 import config
 from collectors import erp_mysql, perfex_crm, satisfycam, google_reviews
-from composers import whatsapp_message, html_dashboard, whatsapp_unit_message
+from composers import (
+    whatsapp_message, html_dashboard, whatsapp_unit_message,
+    whatsapp_weekly_message, whatsapp_monthly_message,
+    html_periodic_dashboard,
+)
 from senders import waha
 
 # ── Logging ─────────────────────────────────────────────────────────────────
@@ -177,6 +181,126 @@ def run_briefing(dry_run: bool = False) -> None:
     logger.info("=== Briefing concluído ===")
 
 
+# ── Briefing Semanal (segunda-feira 7h, franqueadora) ─────────────────────────
+
+def run_weekly_briefing(dry_run: bool = False) -> None:
+    import calendar
+    logger.info("=== Iniciando briefing SEMANAL %s ===", date.today())
+
+    today = date.today()
+    # Semana anterior: segunda a domingo
+    last_monday = today - timedelta(days=today.weekday() + 7)
+    last_sunday = last_monday + timedelta(days=6)
+    data_fim_exclusive = last_sunday + timedelta(days=1)
+
+    # 1. Coleta com range
+    data = erp_mysql.collect_range(last_monday, data_fim_exclusive, tipo="semanal")
+
+    # Adiciona Perfex (pipeline sempre atual)
+    try:
+        data.update(perfex_crm.collect_all())
+    except Exception as exc:
+        logger.error("Perfex CRM falhou: %s", exc)
+
+    # 2. Gera HTML
+    try:
+        filepath = html_periodic_dashboard.generate(data, last_monday, last_sunday, tipo="semanal")
+        filename = os.path.basename(filepath)
+        dashboard_url = f"{config.DASHBOARD_BASE_URL}/{filename}"
+        data["dashboard_url"] = dashboard_url
+    except Exception as exc:
+        logger.error("Falha ao gerar HTML semanal: %s", exc, exc_info=True)
+        data["dashboard_url"] = ""
+
+    # 3. Compõe mensagem
+    try:
+        mensagem = whatsapp_weekly_message.compose(data, last_monday, last_sunday)
+    except Exception as exc:
+        logger.error("Falha ao compor mensagem semanal: %s", exc, exc_info=True)
+        mensagem = f"⚠️ Erro ao gerar resumo semanal VIP {date.today()}. Verifique daily.log."
+
+    # 4. Envia / Preview
+    if dry_run:
+        logger.info("DRY RUN — mensagem semanal não enviada.")
+        print("\n" + "=" * 60)
+        print("📢 RESUMO SEMANAL (Franqueadora)")
+        print("=" * 60)
+        print(mensagem)
+        print("=" * 60 + "\n")
+    else:
+        if config.WAHA_RECIPIENTS:
+            results = waha.broadcast(mensagem)
+            ok = sum(v for v in results.values())
+            logger.info("WhatsApp semanal: %d/%d enviados.", ok, len(results))
+        else:
+            logger.warning("Nenhum destinatário configurado em WAHA_RECIPIENTS.")
+
+    logger.info("=== Briefing semanal concluído ===")
+
+
+# ── Briefing Mensal (dia 1, 9h, franqueadora) ────────────────────────────────
+
+def run_monthly_briefing(dry_run: bool = False) -> None:
+    import calendar
+    logger.info("=== Iniciando briefing MENSAL %s ===", date.today())
+
+    today = date.today()
+    # Mês anterior
+    if today.month == 1:
+        prev_month, prev_year = 12, today.year - 1
+    else:
+        prev_month, prev_year = today.month - 1, today.year
+
+    data_inicio = date(prev_year, prev_month, 1)
+    last_day = calendar.monthrange(prev_year, prev_month)[1]
+    data_fim_inclusive = date(prev_year, prev_month, last_day)
+    data_fim_exclusive = data_fim_inclusive + timedelta(days=1)
+
+    # 1. Coleta com range
+    data = erp_mysql.collect_range(data_inicio, data_fim_exclusive, tipo="mensal")
+
+    # Adiciona Perfex
+    try:
+        data.update(perfex_crm.collect_all())
+    except Exception as exc:
+        logger.error("Perfex CRM falhou: %s", exc)
+
+    # 2. Gera HTML
+    try:
+        filepath = html_periodic_dashboard.generate(data, data_inicio, data_fim_inclusive, tipo="mensal")
+        filename = os.path.basename(filepath)
+        dashboard_url = f"{config.DASHBOARD_BASE_URL}/{filename}"
+        data["dashboard_url"] = dashboard_url
+    except Exception as exc:
+        logger.error("Falha ao gerar HTML mensal: %s", exc, exc_info=True)
+        data["dashboard_url"] = ""
+
+    # 3. Compõe mensagem
+    try:
+        mensagem = whatsapp_monthly_message.compose(data, data_inicio, data_fim_inclusive)
+    except Exception as exc:
+        logger.error("Falha ao compor mensagem mensal: %s", exc, exc_info=True)
+        mensagem = f"⚠️ Erro ao gerar resumo mensal VIP {date.today()}. Verifique daily.log."
+
+    # 4. Envia / Preview
+    if dry_run:
+        logger.info("DRY RUN — mensagem mensal não enviada.")
+        print("\n" + "=" * 60)
+        print("📢 RESUMO MENSAL (Franqueadora)")
+        print("=" * 60)
+        print(mensagem)
+        print("=" * 60 + "\n")
+    else:
+        if config.WAHA_RECIPIENTS:
+            results = waha.broadcast(mensagem)
+            ok = sum(v for v in results.values())
+            logger.info("WhatsApp mensal: %d/%d enviados.", ok, len(results))
+        else:
+            logger.warning("Nenhum destinatário configurado em WAHA_RECIPIENTS.")
+
+    logger.info("=== Briefing mensal concluído ===")
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
@@ -189,7 +313,31 @@ def main():
         "--dry", action="store_true",
         help="Executa imediatamente, gera HTML, mas NÃO envia WhatsApp"
     )
+    parser.add_argument(
+        "--test-weekly", action="store_true",
+        help="Executa briefing semanal imediatamente e envia"
+    )
+    parser.add_argument(
+        "--dry-weekly", action="store_true",
+        help="Executa briefing semanal imediatamente, NÃO envia"
+    )
+    parser.add_argument(
+        "--test-monthly", action="store_true",
+        help="Executa briefing mensal imediatamente e envia"
+    )
+    parser.add_argument(
+        "--dry-monthly", action="store_true",
+        help="Executa briefing mensal imediatamente, NÃO envia"
+    )
     args = parser.parse_args()
+
+    if args.test_weekly or args.dry_weekly:
+        run_weekly_briefing(dry_run=args.dry_weekly)
+        return
+
+    if args.test_monthly or args.dry_monthly:
+        run_monthly_briefing(dry_run=args.dry_monthly)
+        return
 
     if args.test or args.dry:
         run_briefing(dry_run=args.dry)
@@ -209,9 +357,40 @@ def main():
         replace_existing=True,
     )
 
+    # Semanal: segunda-feira
+    scheduler.add_job(
+        run_weekly_briefing,
+        trigger=CronTrigger(
+            day_of_week="mon",
+            hour=config.WEEKLY_BRIEFING_HOUR,
+            minute=config.WEEKLY_BRIEFING_MINUTE,
+            timezone=config.TIMEZONE,
+        ),
+        id="weekly_briefing",
+        name="Weekly Briefing VIP",
+        replace_existing=True,
+    )
+
+    # Mensal: dia 1
+    scheduler.add_job(
+        run_monthly_briefing,
+        trigger=CronTrigger(
+            day=1,
+            hour=config.MONTHLY_BRIEFING_HOUR,
+            minute=config.MONTHLY_BRIEFING_MINUTE,
+            timezone=config.TIMEZONE,
+        ),
+        id="monthly_briefing",
+        name="Monthly Briefing VIP",
+        replace_existing=True,
+    )
+
     logger.info(
-        "Scheduler iniciado. Próximo briefing: %02d:%02d (%s)",
-        config.BRIEFING_HOUR, config.BRIEFING_MINUTE, config.TIMEZONE,
+        "Scheduler iniciado. Diário: %02d:%02d | Semanal: seg %02d:%02d | Mensal: dia 1 %02d:%02d (%s)",
+        config.BRIEFING_HOUR, config.BRIEFING_MINUTE,
+        config.WEEKLY_BRIEFING_HOUR, config.WEEKLY_BRIEFING_MINUTE,
+        config.MONTHLY_BRIEFING_HOUR, config.MONTHLY_BRIEFING_MINUTE,
+        config.TIMEZONE,
     )
 
     try:

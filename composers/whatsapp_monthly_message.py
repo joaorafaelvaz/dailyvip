@@ -1,0 +1,218 @@
+"""Formata o resumo mensal como mensagem de texto para WhatsApp (franqueadora)."""
+
+from datetime import date
+from typing import Any
+
+
+def _fmt_brl(value) -> str:
+    """Formata número como R$ com separador de milhar."""
+    try:
+        v = float(value or 0)
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (TypeError, ValueError):
+        return "R$ --"
+
+
+def _fmt_pct(value) -> str:
+    if value is None:
+        return "--"
+    return f"{value:.1f}%"
+
+
+def _short_name(row: dict) -> str:
+    """Retorna nome curto da unidade: 'Cidade - Bairro' ou fallback no nome completo."""
+    cidade = row.get("cidade", "")
+    nome = row.get("unidade_nome", "")
+    if cidade and " - " in nome:
+        parts = nome.split(" - ")
+        bairro = parts[-1].strip()
+        return f"{cidade} - {bairro}"
+    return nome
+
+
+def _sep() -> str:
+    return "━━━━━━━━━━━━━━━━━━━━"
+
+
+def _section(title: str) -> str:
+    return f"\n{_sep()}\n{title}\n"
+
+
+_MESES = {
+    1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril",
+    5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
+    9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+}
+
+
+def compose(data: dict[str, Any], data_inicio: date, data_fim: date) -> str:
+    """
+    Recebe o dict consolidado dos collectors e retorna a string
+    formatada para WhatsApp com o resumo mensal.
+    """
+    mes_nome = _MESES.get(data_inicio.month, str(data_inicio.month))
+    ano = data_inicio.year
+    lines = []
+
+    # -- Cabecalho ---------------------------------------------------------------
+    lines.append(f"🟢 *RESUMO MENSAL VIP* 📊 {mes_nome}/{ano}")
+    lines.append(_sep())
+
+    # -- Faturamento mensal ------------------------------------------------------
+    fat = data.get("faturamento")
+    lines.append("💰 *FATURAMENTO MENSAL*")
+    if fat:
+        rede_str = _fmt_brl(fat["total_rede"])
+        lines.append(f"Rede: *{rede_str}* | Ticket médio: {_fmt_brl(fat['ticket_medio_rede'])}")
+
+        if fat.get("meta_proporcional_rede") and fat.get("pct_meta_rede"):
+            lines.append(
+                f"Meta mensal: {_fmt_brl(fat['meta_proporcional_rede'])} → *{_fmt_pct(fat['pct_meta_rede'])}*"
+            )
+
+        if fat.get("top5"):
+            lines.append("🏆 *Top 5:*")
+            for u in fat["top5"]:
+                meta_tag = f" ({_fmt_pct(u['pct_meta'])} da meta)" if u.get("pct_meta") else ""
+                lines.append(f"  • {_short_name(u)} — {_fmt_brl(u['faturamento'])}{meta_tag}")
+
+        if fat.get("bottom5"):
+            lines.append("⚠️ *Atenção:*")
+            for u in fat["bottom5"]:
+                meta_tag = f" ({_fmt_pct(u['pct_meta'])} da meta)" if u.get("pct_meta") else ""
+                lines.append(f"  • {_short_name(u)} — {_fmt_brl(u['faturamento'])}{meta_tag}")
+    else:
+        lines.append("⚠️ _Dados de faturamento indisponíveis_")
+
+    # -- Meta mensal -------------------------------------------------------------
+    meta = data.get("meta_mensal")
+    lines.append(_section("📊 *META MENSAL*"))
+    if meta:
+        acum = _fmt_brl(meta["acumulado_rede"])
+        meta_total = _fmt_brl(meta["meta_rede"])
+        pct = _fmt_pct(meta["pct_rede"])
+        lines.append(f"Acumulado: *{acum}* / {meta_total} → *{pct}*")
+    else:
+        lines.append("⚠️ _Dados de meta indisponíveis_")
+
+    # -- Agenda mensal -----------------------------------------------------------
+    agenda = data.get("agenda")
+    lines.append(_section("📅 *AGENDA MENSAL*"))
+    if agenda:
+        lines.append(
+            f"Ocupação rede: *{_fmt_pct(agenda['ocupacao_rede_pct'])}* "
+            f"({agenda['total_ocupados']}/{agenda['total_slots']} slots)"
+        )
+        lines.append(
+            f"Realizados: *{agenda['total_realizados']}* atendimentos"
+        )
+        lines.append(
+            f"🚫 No-shows: *{agenda['total_noshows']}* | "
+            f"🔒 Fechamentos: *{agenda['total_fechamentos']}*"
+        )
+        lines.append(
+            f"📱 App: *{agenda['total_app']}* | "
+            f"Recepção: *{agenda['total_recepcao']}*"
+        )
+    else:
+        lines.append("⚠️ _Dados de agenda indisponíveis_")
+
+    # -- Inadimplencia -----------------------------------------------------------
+    inadim = data.get("inadimplencia")
+    lines.append(_section("💳 *INADIMPLÊNCIA*"))
+    if inadim:
+        roy = inadim.get("royalties", [])
+        fundo = inadim.get("fundo_publicidade", [])
+        if roy:
+            lines.append(f"🔴 Royalties: *{len(roy)} fatura(s)* em atraso")
+            for r in roy[:5]:
+                lines.append(
+                    f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
+                    f"({r['dias_atraso']}d)"
+                )
+        else:
+            lines.append("✅ Royalties: em dia")
+
+        if fundo:
+            lines.append(f"🔴 Fundo Publicidade: *{len(fundo)} fatura(s)* em atraso")
+            for r in fundo[:5]:
+                lines.append(
+                    f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
+                    f"({r['dias_atraso']}d)"
+                )
+        else:
+            lines.append("✅ Fundo Publicidade: em dia")
+    else:
+        lines.append("⚠️ _Dados de inadimplência indisponíveis_")
+
+    # -- Perfex CRM / Leads ------------------------------------------------------
+    perfex = data.get("perfex", {}).get("leads")
+    lines.append(_section("🎯 *CRM / LEADS FRANQUEADOS*"))
+    if perfex:
+        lines.append(
+            f"Novos leads 24h: *{perfex['novos_24h']}* | "
+            f"Total pipeline: *{perfex['total_leads']}*"
+        )
+        if perfex.get("funil"):
+            funil_str = " | ".join(f"{k}: {v}" for k, v in perfex["funil"].items())
+            lines.append(f"Funil: {funil_str}")
+    else:
+        lines.append("⚠️ _Perfex CRM indisponível_")
+
+    # -- Google Reviews ----------------------------------------------------------
+    reviews = data.get("google", {}).get("reviews")
+    lines.append(_section("⭐ *GOOGLE REVIEWS*"))
+    if reviews:
+        lines.append(
+            f"Novas: *{reviews['total']}* "
+            f"(✅ {len(reviews['positivas'])} positivas | "
+            f"❌ {len(reviews['negativas'])} negativas)"
+        )
+        for r in reviews["negativas"][:3]:
+            autor = r.get("reviewer", {}).get("displayName", "Anônimo")
+            local = r.get("_location_title", "")
+            comentario = (r.get("comment") or "")[:80]
+            lines.append(f"  ⚠️ {autor} ({local}): _{comentario}_")
+    else:
+        lines.append("⚠️ _Google Reviews indisponível_")
+
+    # -- Ocupacao por unidade (top/bottom) ---------------------------------------
+    if agenda and agenda.get("unidades"):
+        agenda_units = agenda["unidades"]
+        sorted_ocup = sorted(
+            agenda_units,
+            key=lambda x: float(x.get("ocupacao_pct") or 0),
+            reverse=True,
+        )
+        com_dados = [u for u in sorted_ocup if float(u.get("ocupacao_pct") or 0) > 0]
+
+        if com_dados:
+            lines.append(_section("📊 *OCUPAÇÃO POR UNIDADE*"))
+            lines.append("🏆 *Maior ocupação:*")
+            for u in com_dados[:5]:
+                lines.append(f"  • {_short_name(u)} — *{u['ocupacao_pct']:.1f}%*")
+            lines.append("⚠️ *Menor ocupação:*")
+            for u in com_dados[-5:][::-1]:
+                lines.append(f"  • {_short_name(u)} — *{u['ocupacao_pct']:.1f}%*")
+
+    # -- Aniversarios ------------------------------------------------------------
+    aniversarios = data.get("aniversarios", [])
+    if aniversarios:
+        lines.append(_section("🎉 *ANIVERSÁRIOS / MARCOS*"))
+        for a in aniversarios:
+            if a["tipo"] == "socio":
+                lines.append(f"🎂 {a['nome']} ({a['unidade_nome']}) — {a['anos']} anos")
+            else:
+                anos = a["anos"]
+                lines.append(
+                    f"🏪 {a['unidade_nome']} completa *{anos} ano{'s' if anos != 1 else ''}*!"
+                )
+
+    # -- Link dashboard ----------------------------------------------------------
+    dashboard_url = data.get("dashboard_url", "")
+    lines.append(f"\n{_sep()}")
+    if dashboard_url:
+        lines.append(f"📋 *Dashboard completo:* {dashboard_url}")
+    lines.append("_Barbearia VIP — Resumo mensal automático_")
+
+    return "\n".join(lines)

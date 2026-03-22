@@ -640,6 +640,290 @@ def get_aniversarios_hoje() -> list[dict]:
     return list(rows)
 
 
+def _get_slots_range(data_inicio: date, data_fim: date) -> dict[int, int]:
+    """Itera dia a dia de data_inicio até data_fim (exclusive) e agrega slots por unidade."""
+    totals: dict[int, int] = {}
+    dt = data_inicio
+    while dt < data_fim:
+        day_slots = _get_slots_disponiveis(dt)
+        for uid, slots in day_slots.items():
+            totals[uid] = totals.get(uid, 0) + slots
+        dt += timedelta(days=1)
+    return totals
+
+
+def get_faturamento_range(
+    data_inicio: date,
+    data_fim: date,
+    media_hist: dict[int, float] = None,
+) -> dict[str, Any]:
+    """Retorna faturamento por unidade no período [data_inicio, data_fim).
+
+    Top5/bottom5 ordenados por faturamento bruto.
+    Meta proporcional: meta_mensal * (dias_no_range / dias_no_mes).
+    """
+    if media_hist is None:
+        media_hist = {}
+
+    days_in_range = (data_fim - data_inicio).days
+    dias_no_mes = calendar.monthrange(data_inicio.year, data_inicio.month)[1]
+
+    rows = _query(
+        """
+        SELECT
+            u.id            AS unidade_id,
+            u.nome          AS unidade_nome,
+            u.cidade,
+            u.estado,
+            SUM(v.valor_total)               AS faturamento,
+            COUNT(v.id)                      AS total_vendas,
+            SUM(v.valor_total) / COUNT(v.id) AS ticket_medio
+        FROM vendas v
+        JOIN usuarios usr ON usr.id = v.usuario
+        JOIN unidades u   ON u.id  = usr.unidade
+        WHERE v.data_criacao >= %s
+          AND v.data_criacao <  %s
+          AND v.status = 1
+          AND v.comanda_temp = 0
+        GROUP BY u.id, u.nome, u.cidade, u.estado
+        ORDER BY faturamento DESC
+        """,
+        (data_inicio, data_fim),
+    )
+
+    if not rows:
+        return {
+            "data_inicio": str(data_inicio),
+            "data_fim": str(data_fim),
+            "total_rede": 0,
+            "unidades": [],
+            "top5": [],
+            "bottom5": [],
+            "ticket_medio_rede": 0,
+        }
+
+    for r in rows:
+        uid = r["unidade_id"]
+        meta_mensal = _resolve_meta(uid, media_hist)
+        r["meta_mensal"] = round(meta_mensal, 2) if meta_mensal else None
+        r["meta_origem"] = (
+            "manual" if uid in MANUAL_METAS
+            else "historica" if uid in media_hist
+            else None
+        )
+        r["meta_proporcional"] = (
+            round(meta_mensal * days_in_range / dias_no_mes, 2)
+            if meta_mensal
+            else None
+        )
+        r["pct_meta"] = (
+            round(float(r["faturamento"]) / r["meta_proporcional"] * 100, 1)
+            if r["meta_proporcional"]
+            else None
+        )
+
+    total_rede = sum(float(r["faturamento"]) for r in rows)
+    total_vendas_rede = sum(r["total_vendas"] for r in rows)
+    ticket_medio_rede = total_rede / total_vendas_rede if total_vendas_rede else 0
+
+    meta_total_rede = sum(r["meta_mensal"] for r in rows if r["meta_mensal"])
+    meta_proporcional_rede = (
+        round(meta_total_rede * days_in_range / dias_no_mes, 2)
+        if meta_total_rede
+        else None
+    )
+
+    por_faturamento = sorted(rows, key=lambda x: float(x["faturamento"] or 0), reverse=True)
+
+    return {
+        "data_inicio": str(data_inicio),
+        "data_fim": str(data_fim),
+        "total_rede": round(total_rede, 2),
+        "total_vendas_rede": total_vendas_rede,
+        "ticket_medio_rede": round(ticket_medio_rede, 2),
+        "meta_proporcional_rede": meta_proporcional_rede,
+        "pct_meta_rede": (
+            round(total_rede / meta_proporcional_rede * 100, 1)
+            if meta_proporcional_rede
+            else None
+        ),
+        "unidades": rows,
+        "top5": por_faturamento[:5],
+        "bottom5": por_faturamento[-5:][::-1],
+    }
+
+
+def get_agenda_range(data_inicio: date, data_fim: date) -> dict[str, Any]:
+    """Retorna métricas de agenda no período [data_inicio, data_fim).
+
+    Mesmos campos que get_agenda_ontem: ocupados, realizados, noshows,
+    fechamentos, agend_app, agend_recepcao, ocupacao_pct por unidade.
+    """
+    slots_por_unidade = _get_slots_range(data_inicio, data_fim)
+
+    rows = _query(
+        """
+        SELECT
+            u.id   AS unidade_id,
+            u.nome AS unidade_nome,
+            u.cidade,
+            COUNT(a.id)                                                AS ocupados,
+            SUM(a.checkin = 1)                                         AS realizados,
+            SUM(a.checkin = 0 AND a.fechamento IS NULL)                AS noshows,
+            SUM(a.fechamento IS NOT NULL)                              AS fechamentos,
+            SUM(a.fechamento IS NULL AND LOWER(a.origem) = 'app')      AS agend_app,
+            SUM(a.fechamento IS NULL AND LOWER(a.origem) != 'app')     AS agend_recepcao
+        FROM agendas a
+        JOIN usuarios usr ON usr.id = a.colaborador
+        JOIN unidades u   ON u.id  = usr.unidade
+        WHERE a.data >= %s AND a.data < %s
+          AND a.status = 1
+        GROUP BY u.id, u.nome, u.cidade
+        ORDER BY u.nome
+        """,
+        (data_inicio, data_fim),
+    )
+
+    for r in rows:
+        uid = r["unidade_id"]
+        r["total_slots"] = slots_por_unidade.get(uid, 0)
+        ocupados = int(r["ocupados"] or 0)
+        r["ocupacao_pct"] = (
+            round(ocupados / r["total_slots"] * 100, 1)
+            if r["total_slots"] > 0
+            else 0
+        )
+
+    total_slots_rede = sum(r["total_slots"] for r in rows)
+    total_ocupados = sum(int(r["ocupados"] or 0) for r in rows)
+    total_realizados = sum(int(r["realizados"] or 0) for r in rows)
+    total_noshows = sum(int(r["noshows"] or 0) for r in rows)
+    total_fechamentos = sum(int(r["fechamentos"] or 0) for r in rows)
+    total_app = sum(int(r["agend_app"] or 0) for r in rows)
+    total_recepcao = sum(int(r["agend_recepcao"] or 0) for r in rows)
+
+    ocupacao_rede = (
+        round(total_ocupados / total_slots_rede * 100, 1)
+        if total_slots_rede
+        else 0
+    )
+
+    return {
+        "data_inicio": str(data_inicio),
+        "data_fim": str(data_fim),
+        "total_slots": total_slots_rede,
+        "total_ocupados": total_ocupados,
+        "total_realizados": total_realizados,
+        "total_noshows": total_noshows,
+        "total_fechamentos": total_fechamentos,
+        "total_app": total_app,
+        "total_recepcao": total_recepcao,
+        "ocupacao_rede_pct": ocupacao_rede,
+        "unidades": rows,
+    }
+
+
+def get_profissionais_range(data_inicio: date, data_fim: date) -> list[dict]:
+    """Retorna resumo de cada profissional por unidade no período [data_inicio, data_fim).
+
+    Usa vendas_produtos.colaborador (barbeiro real) e produtos.tipo
+    para separar serviços de produtos.
+    """
+    rows = _query(
+        """
+        SELECT
+            u.id                              AS unidade_id,
+            u.nome                            AS unidade_nome,
+            barb.nome                         AS barbeiro_nome,
+            SUM(CASE WHEN p.tipo IN ('ser','lavavip','pac')
+                     THEN 1 ELSE 0 END)       AS total_servicos,
+            SUM(CASE WHEN p.tipo IN ('probar','proemp','proins')
+                     THEN vp.quantidade ELSE 0 END) AS total_produtos,
+            SUM(vp.valor_total)               AS faturamento,
+            SUM(vp.valor_total) / COUNT(DISTINCT vp.venda) AS ticket_medio
+        FROM vendas_produtos vp
+        JOIN vendas v      ON v.id   = vp.venda
+        JOIN produtos p    ON p.id   = vp.produto
+        JOIN usuarios barb ON barb.id = vp.colaborador
+        JOIN unidades u    ON u.id   = barb.unidade
+        WHERE v.data_criacao >= %s AND v.data_criacao < %s
+          AND v.status = 1
+          AND v.comanda_temp = 0
+        GROUP BY u.id, u.nome, barb.id, barb.nome
+        ORDER BY u.id, faturamento DESC
+        """,
+        (data_inicio, data_fim),
+    )
+
+    fat_por_unidade: dict[int, float] = {}
+    for r in rows:
+        uid = r["unidade_id"]
+        fat_por_unidade[uid] = fat_por_unidade.get(uid, 0) + float(r["faturamento"] or 0)
+
+    for r in rows:
+        uid = r["unidade_id"]
+        fat_total = fat_por_unidade.get(uid, 0)
+        r["pct_unidade"] = (
+            round(float(r["faturamento"] or 0) / fat_total * 100, 1)
+            if fat_total > 0
+            else 0
+        )
+
+    return list(rows)
+
+
+def collect_range(
+    data_inicio: date,
+    data_fim: date,
+    tipo: str = "semanal",
+) -> dict[str, Any]:
+    """Executa collectors para um período arbitrário [data_inicio, data_fim).
+
+    tipo: 'semanal' ou 'mensal' — controla cálculo proporcional de meta.
+    Não inclui: clientes_sem_retorno, agenda_hoje.
+    """
+    import time as _time
+
+    result: dict[str, Any] = {}
+
+    # Carrega médias históricas (fallback de meta)
+    media_hist: dict[int, float] = {}
+    try:
+        media_hist = get_media_historica()
+        logger.info(
+            "Médias históricas carregadas: %d unidades (metas manuais: %d)",
+            len(media_hist), len(MANUAL_METAS),
+        )
+    except Exception as exc:
+        logger.error("Falha ao carregar médias históricas: %s", exc, exc_info=True)
+
+    collectors = {
+        "faturamento": lambda: get_faturamento_range(data_inicio, data_fim, media_hist),
+        "meta_mensal": lambda: get_meta_mensal(media_hist),
+        "agenda": lambda: get_agenda_range(data_inicio, data_fim),
+        "profissionais": lambda: get_profissionais_range(data_inicio, data_fim),
+        "inadimplencia": get_royalties_inadimplentes,
+        "aniversarios": get_aniversarios_hoje,
+    }
+
+    for name, fn in collectors.items():
+        try:
+            t0 = _time.monotonic()
+            result[name] = fn()
+            logger.info("ERP '%s' ok (%.1fs)", name, _time.monotonic() - t0)
+        except Exception as exc:
+            logger.error("ERP collector '%s' falhou: %s", name, exc, exc_info=True)
+            result[name] = None
+
+    result["periodo"] = {
+        "data_inicio": str(data_inicio),
+        "data_fim": str(data_fim),
+        "tipo": tipo,
+    }
+
+    return result
+
+
 def collect_all() -> dict[str, Any]:
     """Executa todas as queries e retorna dict consolidado. Falhas parciais são logadas."""
     result = {}

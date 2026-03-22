@@ -47,10 +47,18 @@ WAHA_RECIPIENTS: list[str] = [
     r.strip() for r in _optional("WAHA_RECIPIENTS", "").split(",") if r.strip()
 ]
 
-# Agendamento
+# Agendamento — Diário
 BRIEFING_HOUR = int(_optional("BRIEFING_HOUR", "8"))
 BRIEFING_MINUTE = int(_optional("BRIEFING_MINUTE", "0"))
 TIMEZONE = _optional("TIMEZONE", "America/Sao_Paulo")
+
+# Agendamento — Semanal (segunda-feira 7h)
+WEEKLY_BRIEFING_HOUR = int(_optional("WEEKLY_BRIEFING_HOUR", "7"))
+WEEKLY_BRIEFING_MINUTE = int(_optional("WEEKLY_BRIEFING_MINUTE", "0"))
+
+# Agendamento — Mensal (dia 1, 9h)
+MONTHLY_BRIEFING_HOUR = int(_optional("MONTHLY_BRIEFING_HOUR", "9"))
+MONTHLY_BRIEFING_MINUTE = int(_optional("MONTHLY_BRIEFING_MINUTE", "0"))
 
 # Dashboard
 DASHBOARD_BASE_URL = _optional("DASHBOARD_BASE_URL", "http://localhost/daily/output")
