@@ -137,7 +137,7 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
     unit_sem_retorno = [c for c in sem_retorno if c.get("unidade_id") == unidade_id]
     if unit_sem_retorno:
         lines.append(f"\n{_sep()}")
-        lines.append(f"🔄 *CLIENTES SEM RETORNO — 45 DIAS* ({len(unit_sem_retorno)})")
+        lines.append(f"🔄 *CLIENTES COM APENAS UMA VISITA E SEM RETORNO — 45 DIAS* ({len(unit_sem_retorno)})")
         for c in unit_sem_retorno[:15]:
             lines.append(
                 f"  • {c['cliente_nome']} — {c.get('cliente_telefone', '')} "
