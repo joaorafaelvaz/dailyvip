@@ -91,6 +91,22 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
         lines.append("💰 *FATURAMENTO ONTEM*")
         lines.append("⚠️ _Dados indisponíveis_")
 
+    # ── Resumo dos profissionais ─────────────────────────────────
+    profissionais = data.get("profissionais", [])
+    unit_profs = [p for p in profissionais if p.get("unidade_id") == unidade_id]
+    if unit_profs:
+        lines.append(f"\n{_sep()}")
+        lines.append("👤 *PROFISSIONAIS*")
+        for p in unit_profs:
+            nome = p["barbeiro_nome"]
+            servicos = int(p.get("total_servicos") or 0)
+            ticket = _fmt_brl(p.get("ticket_medio"))
+            pct = float(p.get("pct_unidade") or 0)
+            lines.append(
+                f"  • {nome} — {servicos} serviços | "
+                f"Ticket: {ticket} | *{pct:.0f}%* do fat."
+            )
+
     # ── Agenda da unidade ──────────────────────────────────────
     agenda = data.get("agenda")
     lines.append(f"\n{_sep()}")

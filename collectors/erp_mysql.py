@@ -452,6 +452,53 @@ def get_agenda_hoje() -> dict[str, Any]:
     }
 
 
+def get_profissionais_ontem() -> list[dict]:
+    """Retorna resumo de cada profissional por unidade no dia anterior.
+
+    Inclui: nome, qtd serviços, ticket médio, faturamento, % da unidade.
+    """
+    ontem = date.today() - timedelta(days=1)
+    ontem_fim = ontem + timedelta(days=1)
+
+    rows = _query(
+        """
+        SELECT
+            u.id                              AS unidade_id,
+            u.nome                            AS unidade_nome,
+            usr.nome                          AS barbeiro_nome,
+            COUNT(v.id)                       AS total_servicos,
+            SUM(v.valor_total)                AS faturamento,
+            SUM(v.valor_total) / COUNT(v.id)  AS ticket_medio
+        FROM vendas v
+        JOIN usuarios usr ON usr.id = v.usuario
+        JOIN unidades u   ON u.id  = usr.unidade
+        WHERE v.data_criacao >= %s AND v.data_criacao < %s
+          AND v.status = 1
+          AND v.comanda_temp = 0
+        GROUP BY u.id, u.nome, usr.id, usr.nome
+        ORDER BY u.id, faturamento DESC
+        """,
+        (ontem, ontem_fim),
+    )
+
+    # Calcula % do faturamento da unidade
+    fat_por_unidade: dict[int, float] = {}
+    for r in rows:
+        uid = r["unidade_id"]
+        fat_por_unidade[uid] = fat_por_unidade.get(uid, 0) + float(r["faturamento"] or 0)
+
+    for r in rows:
+        uid = r["unidade_id"]
+        fat_total = fat_por_unidade.get(uid, 0)
+        r["pct_unidade"] = (
+            round(float(r["faturamento"] or 0) / fat_total * 100, 1)
+            if fat_total > 0
+            else 0
+        )
+
+    return list(rows)
+
+
 def get_clientes_sem_retorno(dias: int = 45) -> list[dict]:
     """Retorna clientes novos que visitaram há `dias` dias e não retornaram.
 
@@ -606,6 +653,7 @@ def collect_all() -> dict[str, Any]:
         "meta_mensal": lambda: get_meta_mensal(media_hist),
         "agenda": get_agenda_ontem,
         "agenda_hoje": get_agenda_hoje,
+        "profissionais": get_profissionais_ontem,
         "clientes_sem_retorno": get_clientes_sem_retorno,
         "inadimplencia": get_royalties_inadimplentes,
         "aniversarios": get_aniversarios_hoje,
