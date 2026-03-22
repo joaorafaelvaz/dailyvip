@@ -187,9 +187,8 @@ def get_faturamento_ontem(media_hist: dict[int, float] = None) -> dict[str, Any]
     meta_total_rede = sum(r["meta_mensal"] for r in rows if r["meta_mensal"])
     meta_diaria_rede = meta_total_rede / dias_mes if meta_total_rede else None
 
-    # Ordena por % de meta para top/bottom
-    com_meta = [r for r in rows if r["pct_meta"] is not None]
-    com_meta_sorted = sorted(com_meta, key=lambda x: x["pct_meta"], reverse=True)
+    # Ordena por faturamento bruto para top/bottom
+    por_faturamento = sorted(rows, key=lambda x: float(x["faturamento"] or 0), reverse=True)
 
     return {
         "data": str(ontem),
@@ -201,8 +200,8 @@ def get_faturamento_ontem(media_hist: dict[int, float] = None) -> dict[str, Any]
             round(total_rede / meta_diaria_rede * 100, 1) if meta_diaria_rede else None
         ),
         "unidades": rows,
-        "top5": com_meta_sorted[:5],
-        "bottom5": com_meta_sorted[-5:][::-1],
+        "top5": por_faturamento[:5],
+        "bottom5": por_faturamento[-5:][::-1],
     }
 
 
