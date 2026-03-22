@@ -100,11 +100,13 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
         for p in unit_profs:
             nome = p["barbeiro_nome"]
             servicos = int(p.get("total_servicos") or 0)
+            produtos = int(p.get("total_produtos") or 0)
             ticket = _fmt_brl(p.get("ticket_medio"))
             pct = float(p.get("pct_unidade") or 0)
+            prod_tag = f" | 🛒 {produtos} prod." if produtos > 0 else ""
             lines.append(
-                f"  • {nome} — {servicos} serviços | "
-                f"Ticket: {ticket} | *{pct:.0f}%* do fat."
+                f"  • {nome} — {servicos} serv. | "
+                f"Ticket: {ticket}{prod_tag} | *{pct:.0f}%* do fat."
             )
 
     # ── Agenda da unidade ──────────────────────────────────────

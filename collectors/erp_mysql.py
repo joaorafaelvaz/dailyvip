@@ -455,7 +455,9 @@ def get_agenda_hoje() -> dict[str, Any]:
 def get_profissionais_ontem() -> list[dict]:
     """Retorna resumo de cada profissional por unidade no dia anterior.
 
-    Inclui: nome, qtd serviços, ticket médio, faturamento, % da unidade.
+    Usa vendas_produtos.colaborador (barbeiro real) e produtos.tipo
+    para separar serviços de produtos.
+    Tipos: ser/lavavip/pac = serviço | probar/proemp/proins = produto.
     """
     ontem = date.today() - timedelta(days=1)
     ontem_fim = ontem + timedelta(days=1)
@@ -466,12 +468,16 @@ def get_profissionais_ontem() -> list[dict]:
             u.id                              AS unidade_id,
             u.nome                            AS unidade_nome,
             barb.nome                         AS barbeiro_nome,
-            COUNT(v.id)                       AS total_servicos,
-            SUM(v.valor_total)                AS faturamento,
-            SUM(v.valor_total) / COUNT(v.id)  AS ticket_medio
-        FROM vendas v
-        JOIN caixas cx    ON cx.id   = v.caixa
-        JOIN usuarios barb ON barb.id = cx.usuario
+            SUM(CASE WHEN p.tipo IN ('ser','lavavip','pac')
+                     THEN 1 ELSE 0 END)       AS total_servicos,
+            SUM(CASE WHEN p.tipo IN ('probar','proemp','proins')
+                     THEN vp.quantidade ELSE 0 END) AS total_produtos,
+            SUM(vp.valor_total)               AS faturamento,
+            SUM(vp.valor_total) / COUNT(DISTINCT vp.venda) AS ticket_medio
+        FROM vendas_produtos vp
+        JOIN vendas v      ON v.id   = vp.venda
+        JOIN produtos p    ON p.id   = vp.produto
+        JOIN usuarios barb ON barb.id = vp.colaborador
         JOIN unidades u    ON u.id   = barb.unidade
         WHERE v.data_criacao >= %s AND v.data_criacao < %s
           AND v.status = 1
