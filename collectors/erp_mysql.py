@@ -465,17 +465,18 @@ def get_profissionais_ontem() -> list[dict]:
         SELECT
             u.id                              AS unidade_id,
             u.nome                            AS unidade_nome,
-            usr.nome                          AS barbeiro_nome,
+            barb.nome                         AS barbeiro_nome,
             COUNT(v.id)                       AS total_servicos,
             SUM(v.valor_total)                AS faturamento,
             SUM(v.valor_total) / COUNT(v.id)  AS ticket_medio
         FROM vendas v
-        JOIN usuarios usr ON usr.id = v.usuario
-        JOIN unidades u   ON u.id  = usr.unidade
+        JOIN caixas cx    ON cx.id   = v.caixa
+        JOIN usuarios barb ON barb.id = cx.usuario
+        JOIN unidades u    ON u.id   = barb.unidade
         WHERE v.data_criacao >= %s AND v.data_criacao < %s
           AND v.status = 1
           AND v.comanda_temp = 0
-        GROUP BY u.id, u.nome, usr.id, usr.nome
+        GROUP BY u.id, u.nome, barb.id, barb.nome
         ORDER BY u.id, faturamento DESC
         """,
         (ontem, ontem_fim),
