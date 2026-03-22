@@ -84,10 +84,6 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
                     f"Sua unidade: {emoji} {diff_ticket:+.1f}%"
                 )
 
-            total_rede = float(fat.get("total_rede") or 0)
-            if total_rede > 0:
-                participacao = (faturamento / total_rede) * 100
-                lines.append(f"Participação na rede: *{participacao:.1f}%*")
         else:
             lines.append("💰 *FATURAMENTO ONTEM*")
             lines.append("⚠️ _Sem dados de faturamento para esta unidade_")
