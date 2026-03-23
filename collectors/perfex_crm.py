@@ -1,7 +1,15 @@
-"""Coleta dados do Perfex CRM via REST API."""
+"""Coleta dados do Perfex CRM via REST API.
 
+API Reference: https://perfexcrm.themesic.com/apiguide/
+Endpoints usados:
+  GET /api/leads/          → retorna TODOS os leads (sem paginação)
+  GET /api/leads/:id       → retorna um lead com detalhes
+  GET /api/leads/search/:q → busca leads por texto
+"""
+
+import json
 import logging
-import time
+import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -15,6 +23,12 @@ _SESSION = requests.Session()
 _SESSION.headers.update({"authtoken": config.PERFEX_API_KEY})
 _TIMEOUT = 15
 
+# Mapeamento de status_id → nome carregado de config/lead_statuses.json
+# O Perfex não expõe os nomes dos status via API — precisam ser mapeados manualmente.
+_STATUSES_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "config", "lead_statuses.json"
+)
+
 
 def _get(path: str, params: dict = None) -> Any:
     url = f"{config.PERFEX_URL}/api/{path.lstrip('/')}"
@@ -25,36 +39,50 @@ def _get(path: str, params: dict = None) -> Any:
 
 # ── Status mapping ────────────────────────────────────────────────────────────
 
-_STATUS_CACHE: dict[str, str] = {}
+def _load_status_map() -> dict[str, str]:
+    """
+    Carrega mapeamento status_id → nome de config/lead_statuses.json.
+
+    Formato esperado:
+    {
+      "1": "Novo",
+      "2": "Contatado",
+      "5": "COF Enviada",
+      "6": "Ganho",
+      ...
+    }
+    """
+    if not os.path.exists(_STATUSES_PATH):
+        logger.warning(
+            "Arquivo %s não encontrado — status de leads aparecerão como IDs numéricos. "
+            "Crie o arquivo com o mapeamento {status_id: nome}.",
+            _STATUSES_PATH,
+        )
+        return {}
+    try:
+        with open(_STATUSES_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        logger.info("Lead statuses carregados: %s", data)
+        return {str(k): str(v) for k, v in data.items()}
+    except (json.JSONDecodeError, IOError) as exc:
+        logger.error("Erro ao ler %s: %s", _STATUSES_PATH, exc)
+        return {}
 
 
-def _fetch_status_map() -> dict[str, str]:
-    """Busca mapeamento status_id → nome do Perfex CRM."""
-    global _STATUS_CACHE
-    if _STATUS_CACHE:
-        return _STATUS_CACHE
-
-    for endpoint in ("leads_statuses", "lead_statuses"):
-        try:
-            data = _get(endpoint)
-            items = data if isinstance(data, list) else data.get("data", [])
-            if items:
-                _STATUS_CACHE = {
-                    str(s.get("id", "")): s.get("name", f"Status {s.get('id')}")
-                    for s in items
-                }
-                logger.info("Perfex status map: %s", _STATUS_CACHE)
-                return _STATUS_CACHE
-        except Exception as exc:
-            logger.debug("Endpoint '%s' falhou: %s", endpoint, exc)
-            continue
-
-    logger.warning("Não foi possível buscar statuses do Perfex — usando IDs numéricos")
-    return {}
+_STATUS_MAP: dict[str, str] = {}
 
 
-def _status_name(lead: dict, status_map: dict[str, str]) -> str:
+def _get_status_map() -> dict[str, str]:
+    global _STATUS_MAP
+    if not _STATUS_MAP:
+        _STATUS_MAP = _load_status_map()
+    return _STATUS_MAP
+
+
+def _status_name(lead: dict) -> str:
     """Retorna o nome do status de um lead."""
+    status_map = _get_status_map()
+    # Tenta campo status_name direto (se a API retornar)
     if lead.get("status_name"):
         return lead["status_name"]
     sid = str(lead.get("status") or lead.get("status_id") or "0")
@@ -63,38 +91,34 @@ def _status_name(lead: dict, status_map: dict[str, str]) -> str:
 
 # ── Lead fetching ─────────────────────────────────────────────────────────────
 
-def _fetch_all_leads(max_pages: int = 20) -> list[dict]:
-    """Busca todos os leads do pipeline com paginação e rate-limit."""
-    page = 1
-    all_leads: list[dict] = []
+def _fetch_all_leads() -> list[dict]:
+    """
+    Busca todos os leads via GET /api/leads/.
 
-    while page <= max_pages:
-        try:
-            data = _get("leads", params={
-                "page": page,
-                "per_page": 100,
-                "sort": "dateadded",
-                "sort_type": "desc",
-            })
-        except requests.exceptions.HTTPError as exc:
-            if exc.response is not None and exc.response.status_code == 429:
-                logger.warning("Perfex rate limit (429) página %d — usando dados coletados.", page)
-                break
-            raise
+    A API Perfex retorna TODOS os leads em uma única chamada (sem paginação).
+    Deduplicamos por ID como segurança.
+    """
+    data = _get("leads")
 
-        if not data:
-            break
-        items = data if isinstance(data, list) else data.get("data", [])
-        if not items:
-            break
-        all_leads.extend(items)
+    if isinstance(data, list):
+        leads = data
+    elif isinstance(data, dict):
+        leads = data.get("data", [])
+    else:
+        logger.warning("Resposta inesperada do Perfex /api/leads/: %s", type(data))
+        return []
 
-        if len(items) < 100:
-            break
-        page += 1
-        time.sleep(1)
+    # Deduplica por ID
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for lead in leads:
+        lid = str(lead.get("id", ""))
+        if lid and lid not in seen:
+            seen.add(lid)
+            unique.append(lead)
 
-    return all_leads
+    logger.info("Perfex: %d leads retornados, %d únicos", len(leads), len(unique))
+    return unique
 
 
 def _lead_date(lead: dict, field: str) -> Optional[str]:
@@ -132,10 +156,11 @@ def get_leads_pipeline(data_inicio: Optional[date] = None,
         - cof_enviada: list[dict] — leads em COF Enviada com última atividade
         - ganhos_periodo: list[dict] — leads ganhos no período
     """
-    status_map = _fetch_status_map()
     all_leads = _fetch_all_leads()
 
-    logger.info("Perfex: %d leads buscados, %d statuses mapeados", len(all_leads), len(status_map))
+    # Log dos status IDs únicos para ajudar no mapeamento inicial
+    status_ids = set(str(l.get("status", "?")) for l in all_leads)
+    logger.info("Status IDs encontrados nos leads: %s", status_ids)
 
     # Período
     if data_inicio and data_fim:
@@ -147,7 +172,7 @@ def get_leads_pipeline(data_inicio: Optional[date] = None,
 
     # Enriquece leads com nome do status
     for lead in all_leads:
-        lead["_status_nome"] = _status_name(lead, status_map)
+        lead["_status_nome"] = _status_name(lead)
 
     # Leads ativos (não perdidos/junk)
     ativos = [
@@ -164,7 +189,7 @@ def get_leads_pipeline(data_inicio: Optional[date] = None,
     # Novos no período (por dateadded)
     novos = []
     for l in all_leads:
-        dt = _lead_date(l, "dateadded") or _lead_date(l, "date_added") or ""
+        dt = _lead_date(l, "dateadded") or ""
         if inicio_str <= dt <= fim_str:
             novos.append(l)
 
@@ -176,10 +201,10 @@ def get_leads_pipeline(data_inicio: Optional[date] = None,
                 _lead_date(lead, "lastcontact")
                 or _lead_date(lead, "last_status_change")
                 or _lead_date(lead, "dateadded")
-                or _lead_date(lead, "date_added")
                 or ""
             )
             cof_enviada.append({
+                "id": lead.get("id"),
                 "nome": lead.get("name") or lead.get("company") or f"Lead #{lead.get('id')}",
                 "ultima_atividade": ultima,
                 "ultima_atividade_br": _fmt_date_br(ultima),
@@ -195,11 +220,11 @@ def get_leads_pipeline(data_inicio: Optional[date] = None,
             data_ganho = (
                 _lead_date(lead, "last_status_change")
                 or _lead_date(lead, "dateadded")
-                or _lead_date(lead, "date_added")
                 or ""
             )
             if inicio_str <= data_ganho <= fim_str:
                 ganhos.append({
+                    "id": lead.get("id"),
                     "nome": lead.get("name") or lead.get("company") or f"Lead #{lead.get('id')}",
                     "data_ganho": data_ganho,
                     "data_ganho_br": _fmt_date_br(data_ganho),

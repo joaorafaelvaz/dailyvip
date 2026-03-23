@@ -1,0 +1,8 @@
+{
+  "_comment": "Mapeamento status_id → nome do Perfex CRM. Execute --dry para ver os IDs reais no log.",
+  "1": "Status 1",
+  "2": "Status 2",
+  "3": "Status 3",
+  "4": "Status 4",
+  "5": "Status 5"
+}
