@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Daily Briefing (dry run)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["main.py", "--dry"],
+      "port": 0
+    },
+    {
+      "name": "Daily Briefing (test/send)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["main.py", "--test"],
+      "port": 0
+    },
+    {
+      "name": "Daily Briefing (scheduler)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["main.py"],
+      "port": 0
+    }
+  ]
+}

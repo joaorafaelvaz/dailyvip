@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'D:\\\\Dev\\\\Barbearia VIP' -maxdepth 2 -type f \\\\\\(-name *.env* -o -name *.config.* -o -name package.json -o -name tsconfig.json -o -name .env \\\\\\))",
+      "Bash(find 'D:/Dev/Barbearia VIP' -name *.js -o -name *.json -o -name *.py -o -name *.sql -o -name *.env -o -name package.json -o -name requirements.txt)",
+      "Bash(find 'D:\\\\Dev\\\\Barbearia VIP\\\\daily' -maxdepth 2 -type f \\\\\\(-name *.json -o -name *.env* \\\\\\))",
+      "Bash(find 'D:\\\\Dev\\\\Barbearia VIP\\\\daily' -maxdepth 3 -type f \\\\\\(-name *.ts -o -name *.js -o -name *.py -o -name *.json \\\\\\))",
+      "Bash(find 'D:\\\\Dev\\\\Barbearia VIP\\\\sensevip\\\\src' -type f -name *.ts -o -name *.tsx)",
+      "Bash(grep -r \"mysql\\\\|perfex\\\\|satisfycam\\\\|google.*review\\\\|waha\" 'D:\\\\Dev\\\\Barbearia VIP\\\\sensevip' --include=*.ts --include=*.tsx --include=*.py --include=*.json)",
+      "Bash(grep -r \"mysql\\\\|perfex\\\\|satisfycam\\\\|google.*review\\\\|waha\" 'D:\\\\Dev\\\\Barbearia VIP\\\\vipcam' --include=*.ts --include=*.tsx --include=*.py --include=*.json)",
+      "Bash(find 'D:\\\\Dev\\\\Barbearia VIP\\\\vipcam\\\\backend\\\\app' -type f -name *.py)",
+      "Bash(find 'D:\\\\Dev\\\\Barbearia VIP' -type f -name *.md)",
+      "Bash(grep -r \"API\\\\|integration\\\\|webhook\\\\|callback\" 'D:\\\\Dev\\\\Barbearia VIP\\\\vipcam\\\\backend\\\\app\\\\api' --include=*.py)",
+      "Bash(grep -r \"mysql\\\\|perfex\\\\|crm\\\\|webhook\\\\|google\" 'D:\\\\Dev\\\\Barbearia VIP' --include=*.ts --include=*.tsx --include=*.py --include=*.toml --include=*.json)",
+      "WebFetch(domain:perfexcrm.themesic.com)",
+      "WebFetch(domain:codeshack.io)",
+      "WebSearch",
+      "WebFetch(domain:devdiligent.com)",
+      "WebFetch(domain:systematica.app)"
+    ]
+  }
+}

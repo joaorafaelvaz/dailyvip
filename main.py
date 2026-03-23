@@ -29,7 +29,12 @@ from composers import (
 from senders import waha
 
 # ── Logging ─────────────────────────────────────────────────────────────────
-_LOG_FILE = os.path.join(os.path.dirname(__file__), "daily.log")
+_BASE_DIR = os.path.dirname(__file__)
+_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
+
+_LOG_FILE = os.path.join(_BASE_DIR, "daily.log")
+_LOG_FILE_WEEKLY = os.path.join(_BASE_DIR, "weekly.log")
+_LOG_FILE_MONTHLY = os.path.join(_BASE_DIR, "monthly.log")
 
 _handlers = [logging.StreamHandler(sys.stdout)]
 try:
@@ -39,10 +44,29 @@ except PermissionError:
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format=_LOG_FORMAT,
     handlers=_handlers,
 )
 logger = logging.getLogger("briefing")
+
+
+def _add_file_handler(log_path: str):
+    """Adiciona handler de arquivo temporário ao root logger e retorna o handler."""
+    try:
+        fh = RotatingFileHandler(log_path, maxBytes=5 * 1024 * 1024, backupCount=7)
+        fh.setFormatter(logging.Formatter(_LOG_FORMAT))
+        logging.getLogger().addHandler(fh)
+        return fh
+    except PermissionError:
+        logger.warning("Sem permissão para %s", log_path)
+        return None
+
+
+def _remove_file_handler(fh):
+    """Remove handler de arquivo do root logger."""
+    if fh:
+        logging.getLogger().removeHandler(fh)
+        fh.close()
 
 
 # ── Coleta de dados ──────────────────────────────────────────────────────────
@@ -185,6 +209,7 @@ def run_briefing(dry_run: bool = False) -> None:
 
 def run_weekly_briefing(dry_run: bool = False) -> None:
     import calendar
+    fh = _add_file_handler(_LOG_FILE_WEEKLY)
     logger.info("=== Iniciando briefing SEMANAL %s ===", date.today())
 
     today = date.today()
@@ -192,6 +217,7 @@ def run_weekly_briefing(dry_run: bool = False) -> None:
     last_monday = today - timedelta(days=today.weekday() + 7)
     last_sunday = last_monday + timedelta(days=6)
     data_fim_exclusive = last_sunday + timedelta(days=1)
+    logger.info("Período: %s a %s", last_monday, last_sunday)
 
     # 1. Coleta com range
     data = erp_mysql.collect_range(last_monday, data_fim_exclusive, tipo="semanal")
@@ -208,6 +234,7 @@ def run_weekly_briefing(dry_run: bool = False) -> None:
         filename = os.path.basename(filepath)
         dashboard_url = f"{config.DASHBOARD_BASE_URL}/{filename}"
         data["dashboard_url"] = dashboard_url
+        logger.info("Dashboard semanal: %s", filepath)
     except Exception as exc:
         logger.error("Falha ao gerar HTML semanal: %s", exc, exc_info=True)
         data["dashboard_url"] = ""
@@ -217,7 +244,7 @@ def run_weekly_briefing(dry_run: bool = False) -> None:
         mensagem = whatsapp_weekly_message.compose(data, last_monday, last_sunday)
     except Exception as exc:
         logger.error("Falha ao compor mensagem semanal: %s", exc, exc_info=True)
-        mensagem = f"⚠️ Erro ao gerar resumo semanal VIP {date.today()}. Verifique daily.log."
+        mensagem = f"⚠️ Erro ao gerar resumo semanal VIP {date.today()}. Verifique weekly.log."
 
     # 4. Envia / Preview
     if dry_run:
@@ -236,12 +263,14 @@ def run_weekly_briefing(dry_run: bool = False) -> None:
             logger.warning("Nenhum destinatário configurado em WAHA_RECIPIENTS.")
 
     logger.info("=== Briefing semanal concluído ===")
+    _remove_file_handler(fh)
 
 
 # ── Briefing Mensal (dia 1, 9h, franqueadora) ────────────────────────────────
 
 def run_monthly_briefing(dry_run: bool = False) -> None:
     import calendar
+    fh = _add_file_handler(_LOG_FILE_MONTHLY)
     logger.info("=== Iniciando briefing MENSAL %s ===", date.today())
 
     today = date.today()
@@ -255,6 +284,7 @@ def run_monthly_briefing(dry_run: bool = False) -> None:
     last_day = calendar.monthrange(prev_year, prev_month)[1]
     data_fim_inclusive = date(prev_year, prev_month, last_day)
     data_fim_exclusive = data_fim_inclusive + timedelta(days=1)
+    logger.info("Período: %s a %s", data_inicio, data_fim_inclusive)
 
     # 1. Coleta com range
     data = erp_mysql.collect_range(data_inicio, data_fim_exclusive, tipo="mensal")
@@ -271,6 +301,7 @@ def run_monthly_briefing(dry_run: bool = False) -> None:
         filename = os.path.basename(filepath)
         dashboard_url = f"{config.DASHBOARD_BASE_URL}/{filename}"
         data["dashboard_url"] = dashboard_url
+        logger.info("Dashboard mensal: %s", filepath)
     except Exception as exc:
         logger.error("Falha ao gerar HTML mensal: %s", exc, exc_info=True)
         data["dashboard_url"] = ""
@@ -280,7 +311,7 @@ def run_monthly_briefing(dry_run: bool = False) -> None:
         mensagem = whatsapp_monthly_message.compose(data, data_inicio, data_fim_inclusive)
     except Exception as exc:
         logger.error("Falha ao compor mensagem mensal: %s", exc, exc_info=True)
-        mensagem = f"⚠️ Erro ao gerar resumo mensal VIP {date.today()}. Verifique daily.log."
+        mensagem = f"⚠️ Erro ao gerar resumo mensal VIP {date.today()}. Verifique monthly.log."
 
     # 4. Envia / Preview
     if dry_run:
@@ -299,6 +330,7 @@ def run_monthly_briefing(dry_run: bool = False) -> None:
             logger.warning("Nenhum destinatário configurado em WAHA_RECIPIENTS.")
 
     logger.info("=== Briefing mensal concluído ===")
+    _remove_file_handler(fh)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
