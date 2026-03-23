@@ -458,12 +458,30 @@ def get_profissionais_ontem() -> list[dict]:
     Usa vendas_produtos.colaborador (barbeiro real) e produtos.tipo
     para separar serviços de produtos.
     Tipos: ser/lavavip/pac = serviço | probar/proemp/proins = produto.
+
+    Executa em dois passos para evitar full-scan em vendas_produtos:
+    1. Busca IDs de vendas do dia (usa índice em vendas.data_criacao)
+    2. Consulta vendas_produtos com IN(...) explícito
     """
     ontem = date.today() - timedelta(days=1)
     ontem_fim = ontem + timedelta(days=1)
 
+    # Passo 1: IDs de vendas do dia (rápido — usa índice data_criacao)
+    vendas_rows = _query(
+        "SELECT id FROM vendas "
+        "WHERE data_criacao >= %s AND data_criacao < %s "
+        "AND status = 1 AND comanda_temp = 0",
+        (ontem, ontem_fim),
+    )
+    if not vendas_rows:
+        return []
+
+    venda_ids = tuple(v["id"] for v in vendas_rows)
+    placeholders = ",".join(["%s"] * len(venda_ids))
+
+    # Passo 2: Agrega por barbeiro usando IN(...) explícito
     rows = _query(
-        """
+        f"""
         SELECT
             u.id                              AS unidade_id,
             u.nome                            AS unidade_nome,
@@ -474,19 +492,15 @@ def get_profissionais_ontem() -> list[dict]:
                      THEN vp.quantidade ELSE 0 END) AS total_produtos,
             SUM(vp.valor_total)               AS faturamento,
             SUM(vp.valor_total) / COUNT(DISTINCT vp.venda) AS ticket_medio
-        FROM (
-            SELECT id FROM vendas
-            WHERE data_criacao >= %s AND data_criacao < %s
-              AND status = 1 AND comanda_temp = 0
-        ) v
-        JOIN vendas_produtos vp ON vp.venda = v.id
+        FROM vendas_produtos vp
         JOIN produtos p    ON p.id   = vp.produto
         JOIN usuarios barb ON barb.id = vp.colaborador
         JOIN unidades u    ON u.id   = barb.unidade
+        WHERE vp.venda IN ({placeholders})
         GROUP BY u.id, u.nome, barb.id, barb.nome
         ORDER BY u.id, faturamento DESC
         """,
-        (ontem, ontem_fim),
+        venda_ids,
     )
 
     # Calcula % do faturamento da unidade
@@ -829,9 +843,24 @@ def get_profissionais_range(data_inicio: date, data_fim: date) -> list[dict]:
 
     Usa vendas_produtos.colaborador (barbeiro real) e produtos.tipo
     para separar serviços de produtos.
+    Dois passos para evitar full-scan em vendas_produtos.
     """
+    # Passo 1: IDs de vendas do período
+    vendas_rows = _query(
+        "SELECT id FROM vendas "
+        "WHERE data_criacao >= %s AND data_criacao < %s "
+        "AND status = 1 AND comanda_temp = 0",
+        (data_inicio, data_fim),
+    )
+    if not vendas_rows:
+        return []
+
+    venda_ids = tuple(v["id"] for v in vendas_rows)
+    placeholders = ",".join(["%s"] * len(venda_ids))
+
+    # Passo 2: Agrega por barbeiro
     rows = _query(
-        """
+        f"""
         SELECT
             u.id                              AS unidade_id,
             u.nome                            AS unidade_nome,
@@ -843,17 +872,14 @@ def get_profissionais_range(data_inicio: date, data_fim: date) -> list[dict]:
             SUM(vp.valor_total)               AS faturamento,
             SUM(vp.valor_total) / COUNT(DISTINCT vp.venda) AS ticket_medio
         FROM vendas_produtos vp
-        JOIN vendas v      ON v.id   = vp.venda
         JOIN produtos p    ON p.id   = vp.produto
         JOIN usuarios barb ON barb.id = vp.colaborador
         JOIN unidades u    ON u.id   = barb.unidade
-        WHERE v.data_criacao >= %s AND v.data_criacao < %s
-          AND v.status = 1
-          AND v.comanda_temp = 0
+        WHERE vp.venda IN ({placeholders})
         GROUP BY u.id, u.nome, barb.id, barb.nome
         ORDER BY u.id, faturamento DESC
         """,
-        (data_inicio, data_fim),
+        venda_ids,
     )
 
     fat_por_unidade: dict[int, float] = {}
