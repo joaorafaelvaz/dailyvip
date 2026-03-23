@@ -92,7 +92,7 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
         lines.append("⚠️ _Dados indisponíveis_")
 
     # ── Resumo dos profissionais ─────────────────────────────────
-    profissionais = data.get("profissionais", [])
+    profissionais = data.get("profissionais") or []
     unit_profs = [p for p in profissionais if p.get("unidade_id") == unidade_id]
     if unit_profs:
         lines.append(f"\n{_sep()}")
@@ -151,7 +151,7 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
             lines.append(f"Ocupação rede: {h_rede:.1f}%")
 
     # ── Clientes sem retorno (45 dias) ────────────────────────
-    sem_retorno = data.get("clientes_sem_retorno", [])
+    sem_retorno = data.get("clientes_sem_retorno") or []
     unit_sem_retorno = [c for c in sem_retorno if c.get("unidade_id") == unidade_id]
     if unit_sem_retorno:
         lines.append(f"\n{_sep()}")

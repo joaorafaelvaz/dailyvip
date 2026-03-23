@@ -474,14 +474,15 @@ def get_profissionais_ontem() -> list[dict]:
                      THEN vp.quantidade ELSE 0 END) AS total_produtos,
             SUM(vp.valor_total)               AS faturamento,
             SUM(vp.valor_total) / COUNT(DISTINCT vp.venda) AS ticket_medio
-        FROM vendas_produtos vp
-        JOIN vendas v      ON v.id   = vp.venda
+        FROM (
+            SELECT id FROM vendas
+            WHERE data_criacao >= %s AND data_criacao < %s
+              AND status = 1 AND comanda_temp = 0
+        ) v
+        JOIN vendas_produtos vp ON vp.venda = v.id
         JOIN produtos p    ON p.id   = vp.produto
         JOIN usuarios barb ON barb.id = vp.colaborador
         JOIN unidades u    ON u.id   = barb.unidade
-        WHERE v.data_criacao >= %s AND v.data_criacao < %s
-          AND v.status = 1
-          AND v.comanda_temp = 0
         GROUP BY u.id, u.nome, barb.id, barb.nome
         ORDER BY u.id, faturamento DESC
         """,

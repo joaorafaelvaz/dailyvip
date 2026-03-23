@@ -217,7 +217,7 @@ def compose(data: dict[str, Any]) -> str:
         lines.append("⚠️ _Dados indisponíveis_")
 
     # ── Clientes sem retorno (45 dias) ───────────────────────────────────────
-    sem_retorno = data.get("clientes_sem_retorno", [])
+    sem_retorno = data.get("clientes_sem_retorno") or []
     if sem_retorno:
         lines.append(_section("🔄 *CLIENTES SEM RETORNO (45 DIAS)*"))
         lines.append(f"Total: *{len(sem_retorno)}* clientes novos não retornaram")
@@ -256,7 +256,7 @@ def compose(data: dict[str, Any]) -> str:
                 lines.append(f"  • {_short_name(u)} — *{u['ocupacao_pct']:.1f}%*")
 
     # ── Aniversários ──────────────────────────────────────────────────────────
-    aniversarios = data.get("aniversarios", [])
+    aniversarios = data.get("aniversarios") or []
     if aniversarios:
         lines.append(_section("🎉 *ANIVERSÁRIOS / MARCOS*"))
         for a in aniversarios:
