@@ -162,12 +162,19 @@ def compose(data: dict[str, Any]) -> str:
     lines.append(_section("🎯 *CRM / LEADS FRANQUEADOS*"))
     if perfex:
         lines.append(
-            f"Novos leads 24h: *{perfex['novos_24h']}* | "
-            f"Total pipeline: *{perfex['total_leads']}*"
+            f"Novos leads (24h): *{perfex['novos_periodo']}* | "
+            f"Pipeline: *{perfex['total_pipeline']}*"
         )
         if perfex.get("funil"):
             funil_str = " | ".join(f"{k}: {v}" for k, v in perfex["funil"].items())
             lines.append(f"Funil: {funil_str}")
+
+        # Destaque COF Enviada
+        cof = perfex.get("cof_enviada", [])
+        if cof:
+            lines.append(f"\n📋 *COF ENVIADA* ({len(cof)})")
+            for c in cof:
+                lines.append(f"  • {c['nome']} — última atividade: {c['ultima_atividade_br']}")
     else:
         lines.append("⚠️ _Perfex CRM indisponível_")
 

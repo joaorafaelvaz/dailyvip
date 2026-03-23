@@ -222,9 +222,9 @@ def run_weekly_briefing(dry_run: bool = False) -> None:
     # 1. Coleta com range
     data = erp_mysql.collect_range(last_monday, data_fim_exclusive, tipo="semanal")
 
-    # Adiciona Perfex (pipeline sempre atual)
+    # Adiciona Perfex (pipeline + leads da semana)
     try:
-        data.update(perfex_crm.collect_all())
+        data["perfex"] = perfex_crm.collect_periodo(last_monday, last_sunday)
     except Exception as exc:
         logger.error("Perfex CRM falhou: %s", exc)
 
@@ -289,9 +289,9 @@ def run_monthly_briefing(dry_run: bool = False) -> None:
     # 1. Coleta com range
     data = erp_mysql.collect_range(data_inicio, data_fim_exclusive, tipo="mensal")
 
-    # Adiciona Perfex
+    # Adiciona Perfex (pipeline + leads do mês)
     try:
-        data.update(perfex_crm.collect_all())
+        data["perfex"] = perfex_crm.collect_periodo(data_inicio, data_fim_inclusive)
     except Exception as exc:
         logger.error("Perfex CRM falhou: %s", exc)
 
