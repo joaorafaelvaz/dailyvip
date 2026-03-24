@@ -1,30 +1,117 @@
 {
   "_doc": "Mapeamento unidade_id → grupo WhatsApp do franqueado.",
-  "_instrucoes": "chat_id formato: '5548999999999-1234567890@g.us' (grupo) ou '5548999999999@c.us' (direto)",
   "units": {
     "1": {
       "nome": "Florianópolis - Santa Mônica",
-      "chat_id": "120363425669122293@g.us"
+      "chat_id": "554899161906-1529438950@g.us"
+    },
+    "5": {
+      "nome": "Balneário Camboriú - Centro",
+      "chat_id": "554899161906-1511808501@g.us"
+    },
+    "10": {
+      "nome": "Curitiba - Mercês",
+      "chat_id": "554899161906-1490648045@g.us"
+    },
+    "13": {
+      "nome": "Itapema - Meia Praia",
+      "chat_id": "554899737953-1581103205@g.us"
+    },
+    "14": {
+      "nome": "Viçosa - Centro",
+      "chat_id": "554899161906-1490652078@g.us"
     },
     "19": {
       "nome": "Ubá - Centro",
-      "chat_id": "120363424288179177@g.us"
+      "chat_id": "554899161906-1497378362@g.us"
+    },
+    "20": {
+      "nome": "Itajaí - Centro",
+      "chat_id": "554899161906-1493937542@g.us"
+    },
+    "21": {
+      "nome": "Imbituba - Centro",
+      "chat_id": "554899161906-1496240197@g.us"
+    },
+    "22": {
+      "nome": "Palhoça - Pedra Branca",
+      "chat_id": "554899161906-1508324278@g.us"
+    },
+    "24": {
+      "nome": "Criciúma - Michel",
+      "chat_id": "554899161906-1505931723@g.us"
     },
     "25": {
       "nome": "Florianópolis - Jurerê",
-      "chat_id": "120363426348902766@g.us"
+      "chat_id": "554899161906-1506536533@g.us"
+    },
+    "26": {
+      "nome": "Florianópolis - Rio Tavares",
+      "chat_id": "554899161906-1505755520@g.us"
     },
     "27": {
       "nome": "Barbacena - Centro",
-      "chat_id": "120363405925540682@g.us"
+      "chat_id": "554899161906-1511808501@g.us"
     },
     "29": {
       "nome": "Joinville - América",
-      "chat_id": "120363425367794853@g.us"
+      "chat_id": "554899737953-1530199943@g.us"
+    },
+    "32": {
+      "nome": "Florianópolis - Coqueiros",
+      "chat_id": "554899737953-1531854800@g.us"
+    },
+    "38": {
+      "nome": "Florianópolis - Beiramar Shopping",
+      "chat_id": "554896131646-1523559401@g.us"
+    },
+    "39": {
+      "nome": "Curitiba - Água Verde",
+      "chat_id": "554899737953-1558016473@g.us"
+    },
+    "43": {
+      "nome": "Ponte Nova - Guarapiranga",
+      "chat_id": "554899737953-1584970128@g.us"
+    },
+    "45": {
+      "nome": "Florianópolis - Centro",
+      "chat_id": "554891023140-1575399281@g.us"
+    },
+    "46": {
+      "nome": "Lages - Centro",
+      "chat_id": "554899476474-1576191994@g.us"
+    },
+    "47": {
+      "nome": "Balneário Camboriú - Avenida Brasil",
+      "chat_id": "554899161906-1493937542@g.us"
     },
     "48": {
       "nome": "São José - Shopping Itaguaçu",
-      "chat_id": "120363425822099285@g.us"
+      "chat_id": "554899737953-1594411698@g.us"
+    },
+    "50": {
+      "nome": "Cataguases - Vila Domingos Lopes",
+      "chat_id": "120363040278841664@g.us"
+    },
+    "51": {
+      "nome": "Marília - Jardim Maria Izabel",
+      "chat_id": "120363022007490825@g.us"
+    },
+    "52": {
+      "nome": "Volta Redonda - Shopping Park Sul",
+      "chat_id": "120363023132272621@g.us"
+    },
+    "57": {
+      "nome": "Juiz de Fora - São Mateus",
+      "chat_id": "554899161906-1540234093@g.us"
+    },
+    "58": {
+      "nome": "Chapecó - Centro",
+      "chat_id": "120363400625722339@g.us"
+    },
+    "60": {
+      "nome": "Juiz de Fora - Braz",
+      "chat_id": "120363190584277887@g.us"
     }
   }
 }
