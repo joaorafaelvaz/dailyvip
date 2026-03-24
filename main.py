@@ -36,11 +36,15 @@ _LOG_FILE = os.path.join(_BASE_DIR, "daily.log")
 _LOG_FILE_WEEKLY = os.path.join(_BASE_DIR, "weekly.log")
 _LOG_FILE_MONTHLY = os.path.join(_BASE_DIR, "monthly.log")
 
-_handlers = [logging.StreamHandler(sys.stdout)]
+_handlers = []
 try:
-    _handlers.insert(0, RotatingFileHandler(_LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=7))
+    _handlers.append(RotatingFileHandler(_LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=7))
 except PermissionError:
     print(f"[WARN] Sem permissão para {_LOG_FILE} — log apenas no stdout", file=sys.stderr)
+
+# Só adiciona StreamHandler se NÃO estiver rodando via systemd (evita duplicação)
+if sys.stdout.isatty() or not _handlers:
+    _handlers.append(logging.StreamHandler(sys.stdout))
 
 logging.basicConfig(
     level=logging.INFO,
