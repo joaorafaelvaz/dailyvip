@@ -122,6 +122,33 @@ def collect_all_data() -> dict:
     return data
 
 
+# ── Dry-run por unidade ──────────────────────────────────────────────────────
+
+def _run_dry_unit(unidade_id: int) -> None:
+    """Coleta dados e exibe no terminal apenas o briefing de uma unidade."""
+    # Descobre nome da unidade
+    unit_groups = config.UNIT_GROUPS
+    nome = f"Unidade #{unidade_id}"
+    if unit_groups and str(unidade_id) in unit_groups:
+        nome = unit_groups[str(unidade_id)].get("nome", nome)
+
+    logger.info("=== Dry-run unidade %s (%s) ===", unidade_id, nome)
+    data = collect_all_data()
+
+    try:
+        msg = whatsapp_unit_message.compose_for_unit(data, unidade_id, nome)
+    except Exception as exc:
+        logger.error("Falha ao compor briefing unidade %s: %s", unidade_id, exc, exc_info=True)
+        msg = f"⚠️ Erro ao gerar briefing para {nome}"
+
+    print("\n" + "=" * 60)
+    print(f"📍 BRIEFING — {nome} (ID {unidade_id})")
+    print("=" * 60)
+    print(msg)
+    print("=" * 60 + "\n")
+    logger.info("=== Dry-run unidade concluído ===")
+
+
 # ── Execução principal ────────────────────────────────────────────────────────
 
 def run_briefing(dry_run: bool = False) -> None:
@@ -365,7 +392,15 @@ def main():
         "--dry-monthly", action="store_true",
         help="Executa briefing mensal imediatamente, NÃO envia"
     )
+    parser.add_argument(
+        "--dry-unit", type=int, metavar="ID",
+        help="Exibe no terminal o briefing de uma unidade específica (ex: --dry-unit 20)"
+    )
     args = parser.parse_args()
+
+    if args.dry_unit is not None:
+        _run_dry_unit(args.dry_unit)
+        return
 
     if args.test_weekly or args.dry_weekly:
         run_weekly_briefing(dry_run=args.dry_weekly)
