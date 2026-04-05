@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # setup.sh — Instalação inicial do Daily Briefing no servidor
-# Barbearia VIP | status.franquiabv.xyz → 201.22.86.97
+# Barbearia VIP | status.franquiabv.com.br → 72.61.44.166
 #
 # Uso (como root ou sudo):
 #   bash setup.sh
@@ -12,7 +12,7 @@ set -euo pipefail
 REPO_URL="https://github.com/joaorafaelvaz/dailyvip.git"
 APP_DIR="/opt/barbearia-daily"
 APP_USER="briefing"
-DOMAIN="status.franquiabv.xyz"
+DOMAIN="status.franquiabv.com.br"
 NGINX_CONF="/etc/nginx/sites-available/daily-briefing"
 SERVICE_FILE="/etc/systemd/system/daily-briefing.service"
 

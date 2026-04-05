@@ -1,13 +1,13 @@
 # Daily Briefing — Barbearia VIP
 
-Envia automaticamente às **8h** um briefing consolidado via WhatsApp e gera um dashboard HTML acessível em **https://status.franquiabv.xyz**.
+Envia automaticamente às **8h** um briefing consolidado via WhatsApp e gera um dashboard HTML acessível em **https://status.franquiabv.com.br**.
 
 ## Stack
 
 - **Python 3.11+** — APScheduler, PyMySQL, Jinja2, Requests
 - **Fontes:** ERP MySQL · Perfex CRM · SatisfyCAM · Google Reviews
 - **Saída:** WhatsApp via WAHA · Dashboard HTML estático
-- **Servidor:** NGINX + Let's Encrypt em `201.22.86.97`
+- **Servidor:** NGINX + Let's Encrypt em `72.61.44.166`
 
 ## Estrutura
 
@@ -23,7 +23,7 @@ daily/
 ├── templates/                 # Template Jinja2 do dashboard
 ├── output/                    # HTMLs gerados (não versionados)
 └── deploy/
-    ├── nginx.conf             # Config NGINX para status.franquiabv.xyz
+    ├── nginx.conf             # Config NGINX para status.franquiabv.com.br
     ├── daily-briefing.service # Serviço systemd
     ├── setup.sh               # Instalação inicial no servidor
     ├── deploy.sh              # Atualização (git pull + restart)
@@ -33,7 +33,7 @@ daily/
 ## Instalação no servidor
 
 ```bash
-# No servidor 201.22.86.97 (como root):
+# No servidor 72.61.44.166 (como root):
 git clone https://github.com/joaorafaelvaz/dailyvip.git /opt/barbearia-daily
 bash /opt/barbearia-daily/deploy/setup.sh
 ```
@@ -41,7 +41,7 @@ bash /opt/barbearia-daily/deploy/setup.sh
 O script faz automaticamente:
 1. Instala dependências do sistema e Python
 2. Cria virtualenv e instala pacotes
-3. Configura NGINX para `status.franquiabv.xyz`
+3. Configura NGINX para `status.franquiabv.com.br`
 4. Obtém certificado SSL via Certbot
 5. Registra e inicia o serviço systemd
 
