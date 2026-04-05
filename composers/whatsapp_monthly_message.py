@@ -60,7 +60,7 @@ def compose(data: dict[str, Any], data_inicio: date, data_fim: date) -> str:
 
     # -- Faturamento mensal ------------------------------------------------------
     fat = data.get("faturamento")
-    lines.append("💰 *FATURAMENTO MENSAL*")
+    lines.append("💰 *FATURAMENTO VISÃO CAIXA MENSAL*")
     if fat:
         rede_str = _fmt_brl(fat["total_rede"])
         lines.append(f"Rede: *{rede_str}* | Ticket médio: {_fmt_brl(fat['ticket_medio_rede'])}")

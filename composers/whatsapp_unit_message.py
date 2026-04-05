@@ -71,8 +71,8 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
             total_vendas = unit_data.get("total_vendas", 0)
             ticket_rede = float(fat.get("ticket_medio_rede") or 0)
 
-            lines.append("💰 *FATURAMENTO ONTEM*")
-            lines.append(f"Faturamento: *{_fmt_brl(faturamento)}*")
+            lines.append("💰 *FATURAMENTO VISÃO CAIXA ONTEM*")
+            lines.append(f"Faturamento visão caixa: *{_fmt_brl(faturamento)}*")
             lines.append(f"Vendas: *{total_vendas}* | Ticket médio: *{_fmt_brl(ticket)}*")
 
             # Comparação com a rede
@@ -85,10 +85,10 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
                 )
 
         else:
-            lines.append("💰 *FATURAMENTO ONTEM*")
+            lines.append("💰 *FATURAMENTO VISÃO CAIXA ONTEM*")
             lines.append("⚠️ _Sem dados de faturamento para esta unidade_")
     else:
-        lines.append("💰 *FATURAMENTO ONTEM*")
+        lines.append("💰 *FATURAMENTO VISÃO CAIXA ONTEM*")
         lines.append("⚠️ _Dados indisponíveis_")
 
     # ── Resumo dos profissionais ─────────────────────────────────
