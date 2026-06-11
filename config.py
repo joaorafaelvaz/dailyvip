@@ -1,10 +1,13 @@
 """Configurações centralizadas carregadas do .env."""
 
 import json
+import logging
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 def _require(key: str) -> str:
@@ -75,16 +78,22 @@ _UNIT_GROUPS_PATH = os.path.join(os.path.dirname(__file__), "config", "unit_grou
 
 def load_unit_groups() -> dict[str, dict]:
     """
-    Carrega mapeamento de unidades para grupos WhatsApp.
-    Retorna dict {unidade_id_str: {"nome": "...", "chat_id": "..."}}.
+    Carrega mapeamento de unidades para destinatários WhatsApp.
+    Retorna dict {unidade_id_str: {"nome": "...", "chat_id": "..."}} —
+    cada unidade pode ter "chat_id" (string) e/ou "chat_ids" (lista).
     """
     if not os.path.exists(_UNIT_GROUPS_PATH):
+        logger.warning("Arquivo %s não encontrado — briefings por unidade desativados.", _UNIT_GROUPS_PATH)
         return {}
     try:
         with open(_UNIT_GROUPS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data.get("units", {})
-    except (json.JSONDecodeError, IOError):
+    except (json.JSONDecodeError, IOError) as exc:
+        logger.error(
+            "ERRO ao ler %s (%s) — briefings por unidade DESATIVADOS até corrigir o arquivo!",
+            _UNIT_GROUPS_PATH, exc,
+        )
         return {}
 
 

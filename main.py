@@ -205,11 +205,18 @@ def run_briefing(dry_run: bool = False, send_units: bool = True) -> None:
             try:
                 uid = int(uid_str)
                 nome = group_info.get("nome", f"Unidade #{uid}")
-                chat_id = group_info.get("chat_id", "")
-                if not chat_id:
+                # Aceita "chat_id" (string) e/ou "chat_ids" (lista)
+                chat_ids = []
+                if group_info.get("chat_id"):
+                    chat_ids.append(group_info["chat_id"])
+                for cid in group_info.get("chat_ids") or []:
+                    if cid and cid not in chat_ids:
+                        chat_ids.append(cid)
+                if not chat_ids:
                     continue
                 msg = whatsapp_unit_message.compose_for_unit(data, uid, nome)
-                unit_messages[chat_id] = {"nome": nome, "mensagem": msg}
+                for chat_id in chat_ids:
+                    unit_messages[chat_id] = {"nome": nome, "mensagem": msg}
             except (ValueError, Exception) as exc:
                 logger.warning("Erro ao compor briefing unidade %s: %s", uid_str, exc)
 
