@@ -26,7 +26,12 @@ def generate(data: dict[str, Any]) -> str:
     env.filters["pct"] = _fmt_pct
 
     template = env.get_template("dashboard.html.j2")
-    html = template.render(data=data, hoje=date.today())
+    html = template.render(
+        data=data,
+        hoje=date.today(),
+        show_satisfycam=config.SHOW_SATISFYCAM,
+        show_inadimplencia=config.SHOW_INADIMPLENCIA,
+    )
 
     filename = f"briefing-{date.today().strftime('%d-%m-%Y')}.html"
     filepath = os.path.join(config.OUTPUT_DIR, filename)

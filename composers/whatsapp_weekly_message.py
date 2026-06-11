@@ -3,6 +3,8 @@
 from datetime import date
 from typing import Any
 
+import config
+
 
 def _fmt_brl(value) -> str:
     """Formata número como R$ com separador de milhar."""
@@ -97,6 +99,10 @@ def compose(data: dict[str, Any], data_inicio: date, data_fim: date) -> str:
             f"({agenda['total_ocupados']}/{agenda['total_slots']} slots)"
         )
         lines.append(
+            f"Ocupação sem fechamentos: *{_fmt_pct(agenda.get('ocupacao_util_rede_pct'))}* "
+            f"({agenda.get('total_ocupados_uteis', 0)}/{agenda.get('total_slots_uteis', 0)} slots)"
+        )
+        lines.append(
             f"Realizados: *{agenda['total_realizados']}* atendimentos"
         )
         lines.append(
@@ -111,32 +117,33 @@ def compose(data: dict[str, Any], data_inicio: date, data_fim: date) -> str:
         lines.append("⚠️ _Dados de agenda indisponíveis_")
 
     # -- Inadimplencia -----------------------------------------------------------
-    inadim = data.get("inadimplencia")
-    lines.append(_section("💳 *INADIMPLÊNCIA*"))
-    if inadim:
-        roy = inadim.get("royalties", [])
-        fundo = inadim.get("fundo_publicidade", [])
-        if roy:
-            lines.append(f"🔴 Royalties: *{len(roy)} fatura(s)* em atraso")
-            for r in roy[:5]:
-                lines.append(
-                    f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
-                    f"({r['dias_atraso']}d)"
-                )
-        else:
-            lines.append("✅ Royalties: em dia")
+    if config.SHOW_INADIMPLENCIA:
+        inadim = data.get("inadimplencia")
+        lines.append(_section("💳 *INADIMPLÊNCIA*"))
+        if inadim:
+            roy = inadim.get("royalties", [])
+            fundo = inadim.get("fundo_publicidade", [])
+            if roy:
+                lines.append(f"🔴 Royalties: *{len(roy)} fatura(s)* em atraso")
+                for r in roy[:5]:
+                    lines.append(
+                        f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
+                        f"({r['dias_atraso']}d)"
+                    )
+            else:
+                lines.append("✅ Royalties: em dia")
 
-        if fundo:
-            lines.append(f"🔴 Fundo Publicidade: *{len(fundo)} fatura(s)* em atraso")
-            for r in fundo[:5]:
-                lines.append(
-                    f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
-                    f"({r['dias_atraso']}d)"
-                )
+            if fundo:
+                lines.append(f"🔴 Fundo Publicidade: *{len(fundo)} fatura(s)* em atraso")
+                for r in fundo[:5]:
+                    lines.append(
+                        f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
+                        f"({r['dias_atraso']}d)"
+                    )
+            else:
+                lines.append("✅ Fundo Publicidade: em dia")
         else:
-            lines.append("✅ Fundo Publicidade: em dia")
-    else:
-        lines.append("⚠️ _Dados de inadimplência indisponíveis_")
+            lines.append("⚠️ _Dados de inadimplência indisponíveis_")
 
     # -- Perfex CRM / Leads ------------------------------------------------------
     perfex = data.get("perfex", {}).get("leads")

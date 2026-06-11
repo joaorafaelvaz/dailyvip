@@ -365,6 +365,15 @@ def get_agenda_ontem() -> dict[str, Any]:
             if r["total_slots"] > 0
             else 0
         )
+        # Ocupação útil: desconta fechamentos dos slots e dos ocupados
+        fechamentos = int(r["fechamentos"] or 0)
+        r["slots_uteis"] = max(r["total_slots"] - fechamentos, 0)
+        r["ocupados_uteis"] = max(ocupados - fechamentos, 0)
+        r["ocupacao_util_pct"] = (
+            round(r["ocupados_uteis"] / r["slots_uteis"] * 100, 1)
+            if r["slots_uteis"] > 0
+            else 0
+        )
 
     # 4. Totais da rede
     total_slots_rede = sum(r["total_slots"] for r in rows)
@@ -374,10 +383,17 @@ def get_agenda_ontem() -> dict[str, Any]:
     total_fechamentos = sum(int(r["fechamentos"] or 0) for r in rows)
     total_app = sum(int(r["agend_app"] or 0) for r in rows)
     total_recepcao = sum(int(r["agend_recepcao"] or 0) for r in rows)
+    total_slots_uteis = sum(r["slots_uteis"] for r in rows)
+    total_ocupados_uteis = sum(r["ocupados_uteis"] for r in rows)
 
     ocupacao_rede = (
         round(total_ocupados / total_slots_rede * 100, 1)
         if total_slots_rede
+        else 0
+    )
+    ocupacao_util_rede = (
+        round(total_ocupados_uteis / total_slots_uteis * 100, 1)
+        if total_slots_uteis
         else 0
     )
 
@@ -391,6 +407,9 @@ def get_agenda_ontem() -> dict[str, Any]:
         "total_app": total_app,
         "total_recepcao": total_recepcao,
         "ocupacao_rede_pct": ocupacao_rede,
+        "total_slots_uteis": total_slots_uteis,
+        "total_ocupados_uteis": total_ocupados_uteis,
+        "ocupacao_util_rede_pct": ocupacao_util_rede,
         "unidades": rows,
     }
 
@@ -435,9 +454,20 @@ def get_agenda_hoje() -> dict[str, Any]:
             if r["total_slots"] > 0
             else 0
         )
+        # Ocupação útil: desconta fechamentos dos slots e dos agendados
+        fechamentos = int(r["fechamentos"] or 0)
+        r["slots_uteis"] = max(r["total_slots"] - fechamentos, 0)
+        r["agendados_uteis"] = max(agendados - fechamentos, 0)
+        r["ocupacao_util_pct"] = (
+            round(r["agendados_uteis"] / r["slots_uteis"] * 100, 1)
+            if r["slots_uteis"] > 0
+            else 0
+        )
 
     total_slots = sum(r["total_slots"] for r in rows)
     total_agendados = sum(int(r["agendados"] or 0) for r in rows)
+    total_slots_uteis = sum(r["slots_uteis"] for r in rows)
+    total_agendados_uteis = sum(r["agendados_uteis"] for r in rows)
 
     return {
         "data": str(hoje),
@@ -446,6 +476,13 @@ def get_agenda_hoje() -> dict[str, Any]:
         "ocupacao_rede_pct": (
             round(total_agendados / total_slots * 100, 1)
             if total_slots
+            else 0
+        ),
+        "total_slots_uteis": total_slots_uteis,
+        "total_agendados_uteis": total_agendados_uteis,
+        "ocupacao_util_rede_pct": (
+            round(total_agendados_uteis / total_slots_uteis * 100, 1)
+            if total_slots_uteis
             else 0
         ),
         "unidades": rows,
@@ -808,6 +845,15 @@ def get_agenda_range(data_inicio: date, data_fim: date) -> dict[str, Any]:
             if r["total_slots"] > 0
             else 0
         )
+        # Ocupação útil: desconta fechamentos dos slots e dos ocupados
+        fechamentos = int(r["fechamentos"] or 0)
+        r["slots_uteis"] = max(r["total_slots"] - fechamentos, 0)
+        r["ocupados_uteis"] = max(ocupados - fechamentos, 0)
+        r["ocupacao_util_pct"] = (
+            round(r["ocupados_uteis"] / r["slots_uteis"] * 100, 1)
+            if r["slots_uteis"] > 0
+            else 0
+        )
 
     total_slots_rede = sum(r["total_slots"] for r in rows)
     total_ocupados = sum(int(r["ocupados"] or 0) for r in rows)
@@ -816,10 +862,17 @@ def get_agenda_range(data_inicio: date, data_fim: date) -> dict[str, Any]:
     total_fechamentos = sum(int(r["fechamentos"] or 0) for r in rows)
     total_app = sum(int(r["agend_app"] or 0) for r in rows)
     total_recepcao = sum(int(r["agend_recepcao"] or 0) for r in rows)
+    total_slots_uteis = sum(r["slots_uteis"] for r in rows)
+    total_ocupados_uteis = sum(r["ocupados_uteis"] for r in rows)
 
     ocupacao_rede = (
         round(total_ocupados / total_slots_rede * 100, 1)
         if total_slots_rede
+        else 0
+    )
+    ocupacao_util_rede = (
+        round(total_ocupados_uteis / total_slots_uteis * 100, 1)
+        if total_slots_uteis
         else 0
     )
 
@@ -834,6 +887,9 @@ def get_agenda_range(data_inicio: date, data_fim: date) -> dict[str, Any]:
         "total_app": total_app,
         "total_recepcao": total_recepcao,
         "ocupacao_rede_pct": ocupacao_rede,
+        "total_slots_uteis": total_slots_uteis,
+        "total_ocupados_uteis": total_ocupados_uteis,
+        "ocupacao_util_rede_pct": ocupacao_util_rede,
         "unidades": rows,
     }
 

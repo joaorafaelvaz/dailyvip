@@ -60,6 +60,10 @@ WEEKLY_BRIEFING_MINUTE = int(_optional("WEEKLY_BRIEFING_MINUTE", "0"))
 MONTHLY_BRIEFING_HOUR = int(_optional("MONTHLY_BRIEFING_HOUR", "9"))
 MONTHLY_BRIEFING_MINUTE = int(_optional("MONTHLY_BRIEFING_MINUTE", "0"))
 
+# Seções opcionais dos relatórios (ocultas por padrão — reative via .env)
+SHOW_SATISFYCAM = _optional("SHOW_SATISFYCAM", "false").lower() in ("1", "true", "yes")
+SHOW_INADIMPLENCIA = _optional("SHOW_INADIMPLENCIA", "false").lower() in ("1", "true", "yes")
+
 # Dashboard
 DASHBOARD_BASE_URL = _optional("DASHBOARD_BASE_URL", "http://localhost/daily/output")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")

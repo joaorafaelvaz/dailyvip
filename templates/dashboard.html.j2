@@ -74,6 +74,7 @@
 
       <!-- Satisfação -->
       {% set scam = data.get('satisfycam', {}).get('relatorio') %}
+      {% if show_satisfycam %}
       <div class="bg-white rounded-2xl shadow p-5">
         <p class="text-xs text-gray-500 uppercase font-semibold mb-1">SatisfyCAM</p>
         <p class="text-2xl font-bold {% if scam and scam.pct_satisfied >= 80 %}text-green-600{% elif scam and scam.pct_satisfied >= 60 %}text-yellow-600{% else %}text-red-600{% endif %}">
@@ -83,6 +84,7 @@
           {{ scam.total_clientes if scam else 0 }} detecções | {{ scam.pct_unsatisfied | pct if scam else '--' }} negativos
         </p>
       </div>
+      {% endif %}
 
     </div>
 
@@ -139,6 +141,7 @@
 
       <!-- ── Inadimplência ── -->
       {% set inadim = data.get('inadimplencia') %}
+      {% if show_inadimplencia %}
       <div class="bg-white rounded-2xl shadow p-5">
         <h2 class="text-lg font-bold mb-4">💳 Inadimplência</h2>
         {% if inadim %}
@@ -191,6 +194,7 @@
           <p class="text-gray-400 text-sm italic">Dados indisponíveis</p>
         {% endif %}
       </div>
+      {% endif %}
 
       <!-- ── CRM / Leads ── -->
       {% set perfex = data.get('perfex', {}).get('leads') %}
@@ -262,6 +266,8 @@
         <p class="text-xs text-gray-500 mb-3">
           Rede: <span class="font-bold">{{ agenda.ocupacao_rede_pct | pct }}</span> ocupação
           ({{ agenda.total_ocupados or 0 }}/{{ agenda.total_slots or 0 }} slots)
+          · <span class="font-bold">{{ agenda.ocupacao_util_rede_pct | pct }}</span> sem fechamentos
+          ({{ agenda.total_ocupados_uteis or 0 }}/{{ agenda.total_slots_uteis or 0 }} slots)
           · {{ agenda.total_realizados or 0 }} realizados
           · {{ agenda.total_noshows or 0 }} no-shows
           · {{ agenda.total_fechamentos or 0 }} fechamentos
@@ -272,6 +278,7 @@
               <th class="pb-1 text-left">Unidade</th>
               <th class="pb-1 text-right">Ocupação</th>
               <th class="pb-1 w-24"></th>
+              <th class="pb-1 text-right">S/ fech.</th>
               <th class="pb-1 text-right">Slots</th>
               <th class="pb-1 text-right">Realiz.</th>
               <th class="pb-1 text-right">No-show</th>
@@ -293,6 +300,10 @@
                          style="width: {{ [ocup, 100] | min }}%"></div>
                   </div>
                 </td>
+                {% set ocup_util = u.ocupacao_util_pct or 0 %}
+                <td class="py-1 text-right font-semibold {% if ocup_util >= 70 %}text-green-600{% elif ocup_util >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                  {{ ocup_util | pct }}
+                </td>
                 <td class="py-1 text-right text-gray-500">{{ u.ocupados or 0 }}/{{ u.total_slots or 0 }}</td>
                 <td class="py-1 text-right text-green-600">{{ u.realizados or 0 }}</td>
                 <td class="py-1 text-right text-red-600 {% if (u.noshows or 0) > 0 %}font-bold{% endif %}">{{ u.noshows or 0 }}</td>
@@ -308,7 +319,7 @@
       {% endif %}
 
       <!-- SatisfyCAM detalhado -->
-      {% if scam %}
+      {% if show_satisfycam and scam %}
       <div class="bg-white rounded-2xl shadow p-5">
         <h2 class="text-lg font-bold mb-4">😊 SatisfyCAM — Detalhes</h2>
         <div class="space-y-3">
@@ -359,6 +370,8 @@
           {{ agenda_hoje.ocupacao_rede_pct | pct }}
         </span> ocupação
         ({{ agenda_hoje.total_agendados or 0 }}/{{ agenda_hoje.total_slots or 0 }} slots)
+        · <span class="font-bold">{{ agenda_hoje.ocupacao_util_rede_pct | pct }}</span> sem fechamentos
+        ({{ agenda_hoje.total_agendados_uteis or 0 }}/{{ agenda_hoje.total_slots_uteis or 0 }} slots)
       </p>
       <div class="overflow-x-auto">
         <table class="w-full text-xs">
@@ -366,6 +379,7 @@
             <th class="pb-1 text-left">Unidade</th>
             <th class="pb-1 text-right">Ocupação</th>
             <th class="pb-1 w-24"></th>
+            <th class="pb-1 text-right">S/ fech.</th>
             <th class="pb-1 text-right">Agendados/Slots</th>
           </tr></thead>
           <tbody>
@@ -381,6 +395,10 @@
                   <div class="progress-fill {% if ocup >= 70 %}bg-green-500{% elif ocup >= 50 %}bg-yellow-400{% else %}bg-red-400{% endif %}"
                        style="width: {{ [ocup, 100] | min }}%"></div>
                 </div>
+              </td>
+              {% set ocup_util = u.ocupacao_util_pct or 0 %}
+              <td class="py-1 text-right font-semibold {% if ocup_util >= 70 %}text-green-600{% elif ocup_util >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                {{ ocup_util | pct }}
               </td>
               <td class="py-1 text-right text-gray-500">{{ u.agendados or 0 }}/{{ u.total_slots or 0 }}</td>
             </tr>

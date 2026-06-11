@@ -55,6 +55,8 @@ def generate(data: dict[str, Any], data_inicio: date, data_fim: date, tipo: str 
         periodo_label=periodo_label,
         data_inicio=data_inicio,
         data_fim=data_fim,
+        show_satisfycam=config.SHOW_SATISFYCAM,
+        show_inadimplencia=config.SHOW_INADIMPLENCIA,
     )
 
     filepath = os.path.join(config.OUTPUT_DIR, filename)

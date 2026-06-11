@@ -3,6 +3,8 @@
 from datetime import date
 from typing import Any
 
+import config
+
 
 def _fmt_brl(value) -> str:
     """Formata número como R$ com separador de milhar."""
@@ -100,6 +102,10 @@ def compose(data: dict[str, Any]) -> str:
             f"({agenda['total_ocupados']}/{agenda['total_slots']} slots)"
         )
         lines.append(
+            f"Ocupação sem fechamentos: *{_fmt_pct(agenda.get('ocupacao_util_rede_pct'))}* "
+            f"({agenda.get('total_ocupados_uteis', 0)}/{agenda.get('total_slots_uteis', 0)} slots)"
+        )
+        lines.append(
             f"Realizados: *{agenda['total_realizados']}* atendimentos"
         )
         lines.append(
@@ -114,48 +120,50 @@ def compose(data: dict[str, Any]) -> str:
         lines.append("⚠️ _Dados de agenda indisponíveis_")
 
     # ── SatisfyCAM ────────────────────────────────────────────────────────────
-    scam = data.get("satisfycam", {}).get("relatorio")
-    lines.append(_section("😊 *SATISFYCAM*"))
-    if scam:
-        lines.append(
-            f"✅ Satisfeitos: *{_fmt_pct(scam['pct_satisfied'])}* | "
-            f"😐 Neutros: *{scam['neutral']}* | "
-            f"😟 Negativos: *{_fmt_pct(scam['pct_unsatisfied'])}*"
-        )
-        lines.append(f"Total detectado: {scam['total_clientes']} clientes")
-        if scam.get("alertas"):
-            for alerta in scam["alertas"][:3]:
-                lines.append(f"  ⚠️ Loja {alerta['storeId']}: {alerta['total_negativas']} neg.")
-    else:
-        lines.append("⚠️ _SatisfyCAM indisponível_")
+    if config.SHOW_SATISFYCAM:
+        scam = data.get("satisfycam", {}).get("relatorio")
+        lines.append(_section("😊 *SATISFYCAM*"))
+        if scam:
+            lines.append(
+                f"✅ Satisfeitos: *{_fmt_pct(scam['pct_satisfied'])}* | "
+                f"😐 Neutros: *{scam['neutral']}* | "
+                f"😟 Negativos: *{_fmt_pct(scam['pct_unsatisfied'])}*"
+            )
+            lines.append(f"Total detectado: {scam['total_clientes']} clientes")
+            if scam.get("alertas"):
+                for alerta in scam["alertas"][:3]:
+                    lines.append(f"  ⚠️ Loja {alerta['storeId']}: {alerta['total_negativas']} neg.")
+        else:
+            lines.append("⚠️ _SatisfyCAM indisponível_")
 
     # ── Inadimplência ─────────────────────────────────────────────────────────
-    inadim = data.get("inadimplencia")
-    lines.append(_section("💳 *INADIMPLÊNCIA*"))
-    if inadim:
-        roy = inadim.get("royalties", [])
-        fundo = inadim.get("fundo_publicidade", [])
-        if roy:
-            lines.append(f"🔴 Royalties: *{len(roy)} fatura(s)* em atraso")
-            for r in roy[:5]:
-                lines.append(
-                    f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
-                    f"({r['dias_atraso']}d)"
-                )
-        else:
-            lines.append("✅ Royalties: em dia")
+    if config.SHOW_INADIMPLENCIA:
+        inadim = data.get("inadimplencia")
+        lines.append(_section("💳 *INADIMPLÊNCIA*"))
+        if inadim:
+            roy = inadim.get("royalties", [])
+            fundo = inadim.get("fundo_publicidade", [])
+            if roy:
+                lines.append(f"🔴 Royalties: *{len(roy)} fatura(s)* em atraso")
+                for r in roy[:5]:
+                    lines.append(
+                        f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
+                        f"({r['dias_atraso']}d)"
+                    )
+            else:
+                lines.append("✅ Royalties: em dia")
 
-        if fundo:
-            lines.append(f"🔴 Fundo Publicidade: *{len(fundo)} fatura(s)* em atraso")
-            for r in fundo[:5]:
-                lines.append(
-                    f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
-                    f"({r['dias_atraso']}d)"
-                )
+            if fundo:
+                lines.append(f"🔴 Fundo Publicidade: *{len(fundo)} fatura(s)* em atraso")
+                for r in fundo[:5]:
+                    lines.append(
+                        f"  • {_short_name(r)} — {_fmt_brl(r['valor'])} "
+                        f"({r['dias_atraso']}d)"
+                    )
+            else:
+                lines.append("✅ Fundo Publicidade: em dia")
         else:
-            lines.append("✅ Fundo Publicidade: em dia")
-    else:
-        lines.append("⚠️ _Dados de inadimplência indisponíveis_")
+            lines.append("⚠️ _Dados de inadimplência indisponíveis_")
 
     # ── Perfex CRM / Leads ────────────────────────────────────────────────────
     perfex = data.get("perfex", {}).get("leads")
@@ -202,6 +210,10 @@ def compose(data: dict[str, Any]) -> str:
         lines.append(
             f"Ocupação rede: *{_fmt_pct(agenda_hoje['ocupacao_rede_pct'])}* "
             f"({agenda_hoje['total_agendados']}/{agenda_hoje['total_slots']} slots)"
+        )
+        lines.append(
+            f"Ocupação sem fechamentos: *{_fmt_pct(agenda_hoje.get('ocupacao_util_rede_pct'))}* "
+            f"({agenda_hoje.get('total_agendados_uteis', 0)}/{agenda_hoje.get('total_slots_uteis', 0)} slots)"
         )
         if agenda_hoje.get("unidades"):
             sorted_hoje = sorted(
