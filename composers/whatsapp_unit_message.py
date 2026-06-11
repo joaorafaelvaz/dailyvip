@@ -128,6 +128,7 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
 
             ocupacao = float(unit_agenda.get("ocupacao_pct") or 0)
             ocupacao_rede = float(agenda.get("ocupacao_rede_pct") or 0)
+            ocupacao_util_rede = float(agenda.get("ocupacao_util_rede_pct") or 0)
             slots_uteis = int(unit_agenda.get("slots_uteis") or 0)
             ocupados_uteis = int(unit_agenda.get("ocupados_uteis") or 0)
             ocupacao_util = float(unit_agenda.get("ocupacao_util_pct") or 0)
@@ -137,7 +138,11 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
                 f"Ocupação sem fechamentos: *{ocupacao_util:.1f}%* "
                 f"({ocupados_uteis}/{slots_uteis} slots)"
             )
-            lines.append(f"Realizados: *{realizados}* | Ocupação rede: {ocupacao_rede:.1f}%")
+            lines.append(f"Realizados: *{realizados}*")
+            lines.append(
+                f"Ocupação rede: {ocupacao_rede:.1f}% | "
+                f"sem fechamentos: {ocupacao_util_rede:.1f}%"
+            )
             lines.append(f"🚫 No-shows: *{noshows}* | 🔒 Fechamentos: *{fechamentos}*")
             lines.append(f"📱 App: *{app}* | Recepção: *{recepcao}*")
         else:
@@ -154,6 +159,7 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
             h_agend = int(unit_hoje.get("agendados") or 0)
             h_ocup = float(unit_hoje.get("ocupacao_pct") or 0)
             h_rede = float(agenda_hoje.get("ocupacao_rede_pct") or 0)
+            h_rede_util = float(agenda_hoje.get("ocupacao_util_rede_pct") or 0)
             h_slots_uteis = int(unit_hoje.get("slots_uteis") or 0)
             h_agend_uteis = int(unit_hoje.get("agendados_uteis") or 0)
             h_ocup_util = float(unit_hoje.get("ocupacao_util_pct") or 0)
@@ -164,7 +170,10 @@ def compose_for_unit(data: dict[str, Any], unidade_id: int, unidade_nome: str = 
                 f"Ocupação sem fechamentos: *{h_ocup_util:.1f}%* "
                 f"({h_agend_uteis}/{h_slots_uteis} slots)"
             )
-            lines.append(f"Ocupação rede: {h_rede:.1f}%")
+            lines.append(
+                f"Ocupação rede: {h_rede:.1f}% | "
+                f"sem fechamentos: {h_rede_util:.1f}%"
+            )
 
     # ── Clientes sem retorno (45 dias) ────────────────────────
     sem_retorno = data.get("clientes_sem_retorno") or []
