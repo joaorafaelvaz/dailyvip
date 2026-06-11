@@ -3,9 +3,10 @@ Daily Briefing — Barbearia VIP
 Coleta dados, gera HTML e envia WhatsApp às 8h.
 
 Uso:
-  python main.py            → modo produção (cron às 8h)
-  python main.py --test     → executa imediatamente e envia WhatsApp
-  python main.py --dry      → executa imediatamente, gera HTML, NÃO envia WhatsApp
+  python main.py               → modo produção (cron às 8h)
+  python main.py --test        → executa imediatamente e envia WhatsApp
+  python main.py --test-geral  → envia apenas o briefing geral (franqueadora)
+  python main.py --dry         → executa imediatamente, gera HTML, NÃO envia WhatsApp
 """
 
 import argparse
@@ -151,7 +152,7 @@ def _run_dry_unit(unidade_id: int) -> None:
 
 # ── Execução principal ────────────────────────────────────────────────────────
 
-def run_briefing(dry_run: bool = False) -> None:
+def run_briefing(dry_run: bool = False, send_units: bool = True) -> None:
     logger.info("=== Iniciando briefing diário %s ===", date.today())
 
     # 1. Coleta
@@ -178,7 +179,9 @@ def run_briefing(dry_run: bool = False) -> None:
     # 4. Compõe mensagens individuais por unidade
     unit_messages = {}
     unit_groups = config.UNIT_GROUPS
-    if unit_groups:
+    if not send_units:
+        logger.info("Briefings por unidade desativados nesta execução (--test-geral).")
+    elif unit_groups:
         for uid_str, group_info in unit_groups.items():
             try:
                 uid = int(uid_str)
@@ -373,6 +376,11 @@ def main():
         help="Executa imediatamente e envia WhatsApp (sem aguardar o cron)"
     )
     parser.add_argument(
+        "--test-geral", action="store_true",
+        help="Executa imediatamente e envia APENAS o briefing geral da franqueadora "
+             "(sem os briefings por unidade)"
+    )
+    parser.add_argument(
         "--dry", action="store_true",
         help="Executa imediatamente, gera HTML, mas NÃO envia WhatsApp"
     )
@@ -408,6 +416,10 @@ def main():
 
     if args.test_monthly or args.dry_monthly:
         run_monthly_briefing(dry_run=args.dry_monthly)
+        return
+
+    if args.test_geral:
+        run_briefing(dry_run=False, send_units=False)
         return
 
     if args.test or args.dry:
