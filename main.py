@@ -125,16 +125,35 @@ def collect_all_data() -> dict:
 
 # ── Dry-run por unidade ──────────────────────────────────────────────────────
 
+def _resolve_unit_name(data: dict, unidade_id: int) -> str:
+    """Busca o nome da unidade nos dados já coletados do ERP."""
+    for key in ("faturamento", "agenda", "agenda_hoje", "meta_mensal"):
+        block = data.get(key) or {}
+        for r in block.get("unidades", []):
+            if r.get("unidade_id") == unidade_id and r.get("unidade_nome"):
+                return r["unidade_nome"]
+    return ""
+
+
 def _run_dry_unit(unidade_id: int) -> None:
     """Coleta dados e exibe no terminal apenas o briefing de uma unidade."""
-    # Descobre nome da unidade
-    unit_groups = config.UNIT_GROUPS
-    nome = f"Unidade #{unidade_id}"
-    if unit_groups and str(unidade_id) in unit_groups:
-        nome = unit_groups[str(unidade_id)].get("nome", nome)
-
-    logger.info("=== Dry-run unidade %s (%s) ===", unidade_id, nome)
+    logger.info("=== Dry-run unidade %s ===", unidade_id)
     data = collect_all_data()
+
+    # Nome: config/unit_groups.json → dados do ERP → fallback genérico
+    nome = ""
+    unit_groups = config.UNIT_GROUPS
+    if unit_groups and str(unidade_id) in unit_groups:
+        nome = unit_groups[str(unidade_id)].get("nome", "")
+    if not nome:
+        nome = _resolve_unit_name(data, unidade_id)
+        if nome:
+            logger.warning(
+                "Unidade %s não mapeada em config/unit_groups.json — usando nome do ERP: %s",
+                unidade_id, nome,
+            )
+    if not nome:
+        nome = f"Unidade #{unidade_id}"
 
     try:
         msg = whatsapp_unit_message.compose_for_unit(data, unidade_id, nome)
