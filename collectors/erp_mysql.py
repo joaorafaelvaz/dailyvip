@@ -495,30 +495,13 @@ def get_profissionais_ontem() -> list[dict]:
     Usa vendas_produtos.colaborador (barbeiro real) e produtos.tipo
     para separar serviços de produtos.
     Tipos: ser/lavavip/pac = serviço | probar/proemp/proins = produto.
-
-    Executa em dois passos para evitar full-scan em vendas_produtos:
-    1. Busca IDs de vendas do dia (usa índice em vendas.data_criacao)
-    2. Consulta vendas_produtos com IN(...) explícito
     """
     ontem = date.today() - timedelta(days=1)
     ontem_fim = ontem + timedelta(days=1)
 
-    # Passo 1: IDs de vendas do dia (rápido — usa índice data_criacao)
-    vendas_rows = _query(
-        "SELECT id FROM vendas "
-        "WHERE data_criacao >= %s AND data_criacao < %s "
-        "AND status = 1 AND comanda_temp = 0",
-        (ontem, ontem_fim),
-    )
-    if not vendas_rows:
-        return []
-
-    venda_ids = tuple(v["id"] for v in vendas_rows)
-    placeholders = ",".join(["%s"] * len(venda_ids))
-
-    # Passo 2: Agrega por barbeiro usando IN(...) explícito
+    # Query unificada: JOIN direto eliminando IN() com milhares de IDs
     rows = _query(
-        f"""
+        """
         SELECT
             u.id                              AS unidade_id,
             u.nome                            AS unidade_nome,
@@ -530,15 +513,21 @@ def get_profissionais_ontem() -> list[dict]:
             SUM(vp.valor_total)               AS faturamento,
             SUM(vp.valor_total) / COUNT(DISTINCT vp.venda) AS ticket_medio
         FROM vendas_produtos vp
+        JOIN vendas v      ON v.id   = vp.venda
+                          AND v.data_criacao >= %s
+                          AND v.data_criacao < %s
+                          AND v.status = 1
+                          AND v.comanda_temp = 0
         JOIN produtos p    ON p.id   = vp.produto
         JOIN usuarios barb ON barb.id = vp.colaborador
         JOIN unidades u    ON u.id   = barb.unidade
-        WHERE vp.venda IN ({placeholders})
         GROUP BY u.id, u.nome, barb.id, barb.nome
         ORDER BY u.id, faturamento DESC
         """,
-        venda_ids,
+        (ontem, ontem_fim),
     )
+    if not rows:
+        return []
 
     # Calcula % do faturamento da unidade
     fat_por_unidade: dict[int, float] = {}
