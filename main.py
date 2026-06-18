@@ -196,7 +196,9 @@ def run_briefing(dry_run: bool = False, send_units: bool = True) -> None:
         mensagem = f"⚠️ Erro ao gerar briefing VIP {date.today()}. Verifique daily.log."
 
     # 4. Compõe mensagens individuais por unidade
-    unit_messages = {}
+    # Lista (não dict): um mesmo chat_id pode receber vários briefings —
+    # ex.: franqueado com 2 unidades recebe os 2 relatórios no mesmo grupo.
+    unit_messages = []
     unit_groups = config.UNIT_GROUPS
     if not send_units:
         logger.info("Briefings por unidade desativados nesta execução (--test-geral).")
@@ -216,7 +218,9 @@ def run_briefing(dry_run: bool = False, send_units: bool = True) -> None:
                     continue
                 msg = whatsapp_unit_message.compose_for_unit(data, uid, nome)
                 for chat_id in chat_ids:
-                    unit_messages[chat_id] = {"nome": nome, "mensagem": msg}
+                    unit_messages.append(
+                        {"chat_id": chat_id, "nome": nome, "mensagem": msg}
+                    )
             except (ValueError, Exception) as exc:
                 logger.warning("Erro ao compor briefing unidade %s: %s", uid_str, exc)
 
@@ -230,13 +234,13 @@ def run_briefing(dry_run: bool = False, send_units: bool = True) -> None:
         print("=" * 60 + "\n")
 
         if unit_messages:
-            print(f"📍 BRIEFINGS INDIVIDUAIS — {len(unit_messages)} unidade(s)")
+            print(f"📍 BRIEFINGS INDIVIDUAIS — {len(unit_messages)} envio(s)")
             print("=" * 60)
-            for chat_id, info in list(unit_messages.items())[:3]:
-                print(f"\n--- {info['nome']} ({chat_id}) ---")
+            for info in unit_messages[:3]:
+                print(f"\n--- {info['nome']} ({info['chat_id']}) ---")
                 print(info["mensagem"])
             if len(unit_messages) > 3:
-                print(f"\n... e mais {len(unit_messages) - 3} unidade(s)")
+                print(f"\n... e mais {len(unit_messages) - 3} envio(s)")
             print("=" * 60 + "\n")
         else:
             logger.info("Nenhum grupo de unidade configurado em config/unit_groups.json")
@@ -253,8 +257,8 @@ def run_briefing(dry_run: bool = False, send_units: bool = True) -> None:
         if unit_messages:
             import time
             ok_units = 0
-            for chat_id, info in unit_messages.items():
-                success = waha.send_text(chat_id, info["mensagem"])
+            for info in unit_messages:
+                success = waha.send_text(info["chat_id"], info["mensagem"])
                 if success:
                     ok_units += 1
                 time.sleep(1.5)  # Intervalo entre envios para não sobrecarregar WAHA
