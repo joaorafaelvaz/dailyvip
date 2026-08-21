@@ -6,6 +6,7 @@ Uso:
   python main.py               → modo produção (cron às 8h)
   python main.py --test        → executa imediatamente e envia WhatsApp
   python main.py --test-geral  → envia apenas o briefing geral (franqueadora)
+  python main.py --test-unit N → envia apenas o briefing da unidade N
   python main.py --dry         → executa imediatamente, gera HTML, NÃO envia WhatsApp
 """
 
@@ -167,6 +168,61 @@ def _run_dry_unit(unidade_id: int) -> None:
     print(msg)
     print("=" * 60 + "\n")
     logger.info("=== Dry-run unidade concluído ===")
+
+
+def _run_test_unit(unidade_id: int) -> None:
+    """Coleta dados, compõe e ENVIA o briefing de UMA unidade específica.
+
+    Envia apenas para os destinatários da própria unidade (não toca na
+    franqueadora nem nas demais unidades). Útil para validar uma unidade
+    recém-adicionada sem reenviar tudo.
+    """
+    logger.info("=== Envio unidade %s ===", unidade_id)
+
+    unit_groups = config.UNIT_GROUPS
+    group_info = unit_groups.get(str(unidade_id)) if unit_groups else None
+    if not group_info:
+        logger.error(
+            "Unidade %s não está em config/unit_groups.json — nada a enviar.", unidade_id
+        )
+        return
+
+    nome = group_info.get("nome", f"Unidade #{unidade_id}")
+    chat_ids = []
+    if group_info.get("chat_id"):
+        chat_ids.append(group_info["chat_id"])
+    for cid in group_info.get("chat_ids") or []:
+        if cid and cid not in chat_ids:
+            chat_ids.append(cid)
+    if not chat_ids:
+        logger.error("Unidade %s (%s) sem chat_id configurado — nada a enviar.", unidade_id, nome)
+        return
+
+    data = collect_all_data()
+
+    # Alerta se o ERP não tem dados para essa unidade (ID errado ou unidade nova sem movimento)
+    if not _resolve_unit_name(data, unidade_id):
+        logger.warning(
+            "Sem dados do ERP para a unidade %s — o briefing pode sair em branco. "
+            "Confirme se o ID bate com o unidade_id do ERP.", unidade_id
+        )
+
+    try:
+        msg = whatsapp_unit_message.compose_for_unit(data, unidade_id, nome)
+    except Exception as exc:
+        logger.error("Falha ao compor briefing unidade %s: %s", unidade_id, exc, exc_info=True)
+        return
+
+    import time
+    ok = 0
+    for chat_id in chat_ids:
+        if waha.send_text(chat_id, msg):
+            ok += 1
+        time.sleep(1.5)
+    logger.info(
+        "Briefing unidade %s (%s) enviado: %d/%d destinatário(s).",
+        unidade_id, nome, ok, len(chat_ids),
+    )
 
 
 # ── Execução principal ────────────────────────────────────────────────────────
@@ -434,10 +490,19 @@ def main():
         "--dry-unit", type=int, metavar="ID",
         help="Exibe no terminal o briefing de uma unidade específica (ex: --dry-unit 20)"
     )
+    parser.add_argument(
+        "--test-unit", type=int, metavar="ID",
+        help="Envia AGORA o briefing de UMA unidade só, para os destinatários dela "
+             "(ex: --test-unit 62). Não toca na franqueadora nem nas outras unidades."
+    )
     args = parser.parse_args()
 
     if args.dry_unit is not None:
         _run_dry_unit(args.dry_unit)
+        return
+
+    if args.test_unit is not None:
+        _run_test_unit(args.test_unit)
         return
 
     if args.test_weekly or args.dry_weekly:
