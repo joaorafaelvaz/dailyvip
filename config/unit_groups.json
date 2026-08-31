@@ -89,10 +89,6 @@
       "nome": "São José - Shopping Itaguaçu",
       "chat_id": "554899737953-1594411698@g.us"
     },
-    "50": {
-      "nome": "Cataguases - Vila Domingos Lopes",
-      "chat_id": "120363040278841664@g.us"
-    },
     "51": {
       "nome": "Marília - Jardim Maria Izabel",
       "chat_id": "120363022007490825@g.us"
@@ -105,10 +101,6 @@
       "nome": "Juiz de Fora - São Mateus",
       "chat_id": "554899161906-1540234093@g.us"
     },
-    "58": {
-      "nome": "Chapecó - Centro",
-      "chat_id": "120363400625722339@g.us"
-    },
     "54": {
       "nome": "Visconde do Rio Branco - Centro",
       "chat_id": "120363161007891383@g.us"
@@ -116,6 +108,10 @@
     "60": {
       "nome": "Juiz de Fora - Braz",
       "chat_id": "120363190584277887@g.us"
+    },
+    "62": {
+      "nome": "Nova Lima - Vale do Sereno",
+      "chat_id": "120363405705623241@g.us"
     }
   }
 }
