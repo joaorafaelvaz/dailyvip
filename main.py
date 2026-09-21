@@ -8,6 +8,9 @@ Uso:
   python main.py --test-geral  → envia apenas o briefing geral (franqueadora)
   python main.py --test-unit N → envia apenas o briefing da unidade N
   python main.py --dry         → executa imediatamente, gera HTML, NÃO envia WhatsApp
+  python main.py --dry-meta    → exibe os relatórios Meta Ads no terminal, NÃO envia
+  python main.py --test-meta   → envia os relatórios Meta Ads agora
+  python main.py --test-meta --meta-account act_123 → envia só o relatório dessa conta
 """
 
 import argparse
@@ -22,11 +25,11 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 import config
-from collectors import erp_mysql, perfex_crm, satisfycam, google_reviews
+from collectors import erp_mysql, perfex_crm, satisfycam, google_reviews, meta_ads
 from composers import (
     whatsapp_message, html_dashboard, whatsapp_unit_message,
     whatsapp_weekly_message, whatsapp_monthly_message,
-    html_periodic_dashboard,
+    html_periodic_dashboard, whatsapp_meta_ads_message,
 )
 from senders import waha
 
@@ -37,6 +40,7 @@ _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
 _LOG_FILE = os.path.join(_BASE_DIR, "daily.log")
 _LOG_FILE_WEEKLY = os.path.join(_BASE_DIR, "weekly.log")
 _LOG_FILE_MONTHLY = os.path.join(_BASE_DIR, "monthly.log")
+_LOG_FILE_META = os.path.join(_BASE_DIR, "meta_ads.log")
 
 _handlers = []
 try:
@@ -453,6 +457,120 @@ def run_monthly_briefing(dry_run: bool = False) -> None:
     _remove_file_handler(fh)
 
 
+# ── Relatório Meta Ads (diário, por conta de anúncios) ────────────────────────
+
+def _meta_ads_recipients(acc: dict) -> list[str]:
+    """
+    Resolve os destinatários de uma conta de anúncios:
+    chat_id/chat_ids próprios, ou os da unidade em unit_groups.json.
+    """
+    chat_ids: list[str] = []
+    if acc.get("chat_id"):
+        chat_ids.append(acc["chat_id"])
+    for cid in acc.get("chat_ids") or []:
+        if cid and cid not in chat_ids:
+            chat_ids.append(cid)
+    if chat_ids:
+        return chat_ids
+
+    uid = acc.get("unidade_id")
+    group_info = config.UNIT_GROUPS.get(str(uid)) if uid is not None else None
+    if group_info:
+        if group_info.get("chat_id"):
+            chat_ids.append(group_info["chat_id"])
+        for cid in group_info.get("chat_ids") or []:
+            if cid and cid not in chat_ids:
+                chat_ids.append(cid)
+    return chat_ids
+
+
+def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None) -> None:
+    """
+    Coleta as métricas de ontem de cada conta em config/meta_ads_accounts.json
+    e envia um relatório por conta para os destinatários configurados.
+
+    Args:
+        dry_run: apenas exibe as mensagens no terminal.
+        only_account: se informado, processa apenas essa conta (com ou sem 'act_').
+    """
+    import time
+
+    fh = _add_file_handler(_LOG_FILE_META)
+    logger.info("=== Iniciando relatório META ADS %s ===", date.today())
+
+    accounts = config.META_ADS_ACCOUNTS
+    if only_account:
+        alvo = meta_ads.normalize_account_id(only_account)
+        accounts = [
+            a for a in accounts
+            if meta_ads.normalize_account_id(a["ad_account_id"]) == alvo
+        ]
+        if not accounts:
+            logger.error(
+                "Conta %s não está em config/meta_ads_accounts.json — nada a enviar.", alvo
+            )
+            _remove_file_handler(fh)
+            return
+
+    if not accounts:
+        logger.warning("Nenhuma conta configurada em config/meta_ads_accounts.json.")
+        _remove_file_handler(fh)
+        return
+
+    dia = date.today() - timedelta(days=1)
+    resultados = meta_ads.collect_all(accounts, dia)
+
+    envios = []
+    for acc in accounts:
+        acc_id = meta_ads.normalize_account_id(acc["ad_account_id"])
+        dados = resultados.get(acc_id) or {"erro": "sem dados", "dia": dia}
+        nome = acc.get("nome") or (dados.get("conta") or {}).get("nome") or acc_id
+
+        try:
+            msg = whatsapp_meta_ads_message.compose(dados, nome)
+        except Exception as exc:
+            logger.error("Falha ao compor relatório Meta Ads %s: %s", acc_id, exc, exc_info=True)
+            dados = {"erro": f"falha ao compor: {exc}", "dia": dia}
+            msg = whatsapp_meta_ads_message.compose(dados, nome)
+
+        if dados.get("erro"):
+            # Falha na coleta: avisa só a franqueadora, não o cliente/franqueado.
+            if not config.WAHA_RECIPIENTS:
+                logger.warning("Conta %s (%s) com erro e sem WAHA_RECIPIENTS — alerta só no log.", acc_id, nome)
+                continue
+            for chat_id in config.WAHA_RECIPIENTS:
+                envios.append({"chat_id": chat_id, "nome": f"{nome} [ALERTA]", "mensagem": msg})
+            continue
+
+        chat_ids = _meta_ads_recipients(acc)
+        if not chat_ids:
+            logger.warning("Conta %s (%s) sem destinatário — pulando.", acc_id, nome)
+            continue
+        for chat_id in chat_ids:
+            envios.append({"chat_id": chat_id, "nome": nome, "mensagem": msg})
+
+    if dry_run:
+        logger.info("DRY RUN — relatórios Meta Ads não enviados.")
+        for info in envios:
+            print("\n" + "=" * 60)
+            print(f"📣 META ADS — {info['nome']} → {info['chat_id']}")
+            print("=" * 60)
+            print(info["mensagem"])
+            print("=" * 60 + "\n")
+        if not envios:
+            logger.info("Nenhum envio gerado.")
+    else:
+        ok = 0
+        for info in envios:
+            if waha.send_text(info["chat_id"], info["mensagem"]):
+                ok += 1
+            time.sleep(1.5)
+        logger.info("WhatsApp Meta Ads: %d/%d enviados.", ok, len(envios))
+
+    logger.info("=== Relatório Meta Ads concluído ===")
+    _remove_file_handler(fh)
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
@@ -495,7 +613,23 @@ def main():
         help="Envia AGORA o briefing de UMA unidade só, para os destinatários dela "
              "(ex: --test-unit 62). Não toca na franqueadora nem nas outras unidades."
     )
+    parser.add_argument(
+        "--test-meta", action="store_true",
+        help="Executa o relatório Meta Ads imediatamente e envia"
+    )
+    parser.add_argument(
+        "--dry-meta", action="store_true",
+        help="Executa o relatório Meta Ads imediatamente, NÃO envia"
+    )
+    parser.add_argument(
+        "--meta-account", metavar="ACT_ID",
+        help="Com --test-meta/--dry-meta: processa apenas essa conta (ex: act_123 ou 123)"
+    )
     args = parser.parse_args()
+
+    if args.test_meta or args.dry_meta:
+        run_meta_ads_briefing(dry_run=args.dry_meta, only_account=args.meta_account)
+        return
 
     if args.dry_unit is not None:
         _run_dry_unit(args.dry_unit)
@@ -563,11 +697,29 @@ def main():
         replace_existing=True,
     )
 
+    # Meta Ads: diário, só se houver contas configuradas
+    if config.META_ADS_ACCOUNTS:
+        scheduler.add_job(
+            run_meta_ads_briefing,
+            trigger=CronTrigger(
+                hour=config.META_BRIEFING_HOUR,
+                minute=config.META_BRIEFING_MINUTE,
+                timezone=config.TIMEZONE,
+            ),
+            id="meta_ads_briefing",
+            name="Meta Ads Briefing VIP",
+            replace_existing=True,
+        )
+
     logger.info(
-        "Scheduler iniciado. Diário: %02d:%02d | Semanal: seg %02d:%02d | Mensal: dia 1 %02d:%02d (%s)",
+        "Scheduler iniciado. Diário: %02d:%02d | Semanal: seg %02d:%02d | Mensal: dia 1 %02d:%02d "
+        "| Meta Ads: %s (%s)",
         config.BRIEFING_HOUR, config.BRIEFING_MINUTE,
         config.WEEKLY_BRIEFING_HOUR, config.WEEKLY_BRIEFING_MINUTE,
         config.MONTHLY_BRIEFING_HOUR, config.MONTHLY_BRIEFING_MINUTE,
+        (f"{config.META_BRIEFING_HOUR:02d}:{config.META_BRIEFING_MINUTE:02d} "
+         f"({len(config.META_ADS_ACCOUNTS)} conta(s))")
+        if config.META_ADS_ACCOUNTS else "desativado",
         config.TIMEZONE,
     )
 

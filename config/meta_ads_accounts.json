@@ -1,0 +1,11 @@
+{
+  "_exemplo": {
+    "_doc": "Copie um objeto como este para dentro de 'accounts'. ad_account_id: ID da conta no Gerenciador de Anúncios (com ou sem 'act_'). nome: título da mensagem. unidade_id (opcional): se informado e não houver chat_id/chat_ids, usa os destinatários da unidade em unit_groups.json. chat_id / chat_ids (opcionais): destinatários diretos no formato do WAHA.",
+    "ad_account_id": "act_123456789012345",
+    "nome": "Cidade - Bairro",
+    "unidade_id": 20,
+    "chat_id": "120363000000000000@g.us",
+    "chat_ids": ["5547999999999@c.us"]
+  },
+  "accounts": []
+}

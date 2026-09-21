@@ -63,6 +63,15 @@ WEEKLY_BRIEFING_MINUTE = int(_optional("WEEKLY_BRIEFING_MINUTE", "0"))
 MONTHLY_BRIEFING_HOUR = int(_optional("MONTHLY_BRIEFING_HOUR", "9"))
 MONTHLY_BRIEFING_MINUTE = int(_optional("MONTHLY_BRIEFING_MINUTE", "0"))
 
+# Meta Ads (Graph API — Marketing Insights)
+# Token de System User do Business Manager com permissão ads_read (não expira).
+META_ACCESS_TOKEN = _optional("META_ACCESS_TOKEN")
+META_API_VERSION = _optional("META_API_VERSION", "v23.0")
+
+# Agendamento — Meta Ads (diário, 8h30)
+META_BRIEFING_HOUR = int(_optional("META_BRIEFING_HOUR", "8"))
+META_BRIEFING_MINUTE = int(_optional("META_BRIEFING_MINUTE", "30"))
+
 # Seções opcionais dos relatórios (ocultas por padrão — reative via .env)
 SHOW_SATISFYCAM = _optional("SHOW_SATISFYCAM", "false").lower() in ("1", "true", "yes")
 SHOW_INADIMPLENCIA = _optional("SHOW_INADIMPLENCIA", "false").lower() in ("1", "true", "yes")
@@ -98,3 +107,37 @@ def load_unit_groups() -> dict[str, dict]:
 
 
 UNIT_GROUPS = load_unit_groups()
+
+# Contas de anúncio do Meta Ads → destinatários WhatsApp
+_META_ADS_ACCOUNTS_PATH = os.path.join(os.path.dirname(__file__), "config", "meta_ads_accounts.json")
+
+
+def load_meta_ads_accounts() -> list[dict]:
+    """
+    Carrega as contas de anúncio que recebem relatório diário do Meta Ads.
+    Retorna lista de dicts com "ad_account_id", "nome" e, opcionalmente,
+    "unidade_id", "chat_id" e/ou "chat_ids". Entradas sem ad_account_id são ignoradas.
+    """
+    if not os.path.exists(_META_ADS_ACCOUNTS_PATH):
+        logger.info("Arquivo %s não encontrado — relatório Meta Ads desativado.", _META_ADS_ACCOUNTS_PATH)
+        return []
+    try:
+        with open(_META_ADS_ACCOUNTS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, IOError) as exc:
+        logger.error(
+            "ERRO ao ler %s (%s) — relatório Meta Ads DESATIVADO até corrigir o arquivo!",
+            _META_ADS_ACCOUNTS_PATH, exc,
+        )
+        return []
+
+    accounts = []
+    for acc in data.get("accounts", []) or []:
+        if not isinstance(acc, dict) or not str(acc.get("ad_account_id", "")).strip():
+            logger.warning("Entrada inválida em meta_ads_accounts.json ignorada: %r", acc)
+            continue
+        accounts.append(acc)
+    return accounts
+
+
+META_ADS_ACCOUNTS = load_meta_ads_accounts()

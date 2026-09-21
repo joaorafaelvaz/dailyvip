@@ -5,7 +5,7 @@ Envia automaticamente às **8h** um briefing consolidado via WhatsApp e gera um 
 ## Stack
 
 - **Python 3.11+** — APScheduler, PyMySQL, Jinja2, Requests
-- **Fontes:** ERP MySQL · Perfex CRM · SatisfyCAM · Google Reviews
+- **Fontes:** ERP MySQL · Perfex CRM · SatisfyCAM · Google Reviews · Meta Ads
 - **Saída:** WhatsApp via WAHA · Dashboard HTML estático
 - **Servidor:** NGINX + Let's Encrypt em `72.61.44.166`
 
@@ -17,8 +17,11 @@ daily/
 ├── config.py                  # Variáveis de ambiente
 ├── requirements.txt
 ├── .env.example               # Template de configuração
-├── collectors/                # Coletores de dados (ERP, CRM, CAM, Google)
+├── collectors/                # Coletores de dados (ERP, CRM, CAM, Google, Meta Ads)
 ├── composers/                 # Geração do HTML e mensagem WhatsApp
+├── config/
+│   ├── unit_groups.json       # Unidade → grupo WhatsApp do franqueado
+│   └── meta_ads_accounts.json # Conta de anúncios Meta → destinatários
 ├── senders/                   # Cliente WAHA
 ├── templates/                 # Template Jinja2 do dashboard
 ├── output/                    # HTMLs gerados (não versionados)
@@ -66,7 +69,35 @@ python -m venv .venv
 python main.py --dry      # coleta + gera HTML, sem enviar WhatsApp
 python main.py --test     # coleta + gera HTML + envia WhatsApp
 python main.py            # modo produção (cron às 8h)
+
+python main.py --dry-meta                          # relatórios Meta Ads no terminal
+python main.py --test-meta                         # envia relatórios Meta Ads agora
+python main.py --test-meta --meta-account act_123  # envia só o de uma conta
 ```
+
+## Relatório diário de Meta Ads
+
+Envia, por conta de anúncios, o resumo de **ontem** (investimento, alcance,
+cliques, CPC/CPM, resultados e top campanhas) mais o acumulado do mês.
+Sai todo dia às **8h30** (`META_BRIEFING_HOUR/MINUTE` no `.env`).
+
+1. No Business Manager, crie um **System User** com acesso à conta de anúncios
+   e gere um token com a permissão `ads_read`. Coloque em `META_ACCESS_TOKEN` no `.env`.
+2. Adicione a conta em `config/meta_ads_accounts.json`:
+   ```json
+   {
+     "accounts": [
+       {
+         "ad_account_id": "act_123456789012345",
+         "nome": "Cidade - Bairro",
+         "unidade_id": 20
+       }
+     ]
+   }
+   ```
+   Sem `chat_id`/`chat_ids`, a mensagem vai para os destinatários da unidade
+   em `unit_groups.json`. Informe `chat_id` para mandar a outro grupo/número.
+3. Teste com `python main.py --dry-meta` e depois `--test-meta`.
 
 ## Logs
 
