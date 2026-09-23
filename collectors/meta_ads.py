@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from datetime import date, timedelta
 from typing import Any, Optional
 
@@ -41,13 +42,28 @@ def _base_url() -> str:
     return f"https://graph.facebook.com/{config.META_API_VERSION}"
 
 
-def _get(path: str, params: dict[str, Any]) -> dict[str, Any]:
-    """GET autenticado na Graph API; converte erros da API em MetaAdsError."""
+def resolve_token(acc: Optional[dict[str, Any]] = None) -> str:
+    """
+    Token a usar para uma conta: a variável de ambiente indicada em "token_env"
+    (uma por Business Manager) ou, na ausência dela, META_ACCESS_TOKEN.
+    """
+    token_env = (acc or {}).get("token_env")
+    if token_env:
+        token = os.getenv(str(token_env).strip(), "")
+        if not token:
+            raise MetaAdsError(f"Variável {token_env} (token_env) não definida no .env")
+        return token
     if not config.META_ACCESS_TOKEN:
         raise MetaAdsError("META_ACCESS_TOKEN não configurado no .env")
+    return config.META_ACCESS_TOKEN
+
+
+def _get(path: str, params: dict[str, Any], token: Optional[str] = None) -> dict[str, Any]:
+    """GET autenticado na Graph API; converte erros da API em MetaAdsError."""
+    token = token or resolve_token()
 
     url = f"{_base_url()}/{path.lstrip('/')}"
-    params = {**params, "access_token": config.META_ACCESS_TOKEN}
+    params = {**params, "access_token": token}
     try:
         resp = requests.get(url, params=params, timeout=_TIMEOUT)
     except requests.exceptions.RequestException as exc:
@@ -139,6 +155,7 @@ def _insights(
     level: str = "account",
     extra_fields: str = "",
     limit: int = 50,
+    token: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     fields = _INSIGHT_FIELDS + (f",{extra_fields}" if extra_fields else "")
     params = {
@@ -147,14 +164,14 @@ def _insights(
         "time_range": json.dumps({"since": since.isoformat(), "until": until.isoformat()}),
         "limit": limit,
     }
-    body = _get(f"{account}/insights", params)
+    body = _get(f"{account}/insights", params, token=token)
     return body.get("data", [])
 
 
-def get_account_info(ad_account_id: str) -> dict[str, Any]:
+def get_account_info(ad_account_id: str, token: Optional[str] = None) -> dict[str, Any]:
     """Nome, moeda e status da conta de anúncios."""
     account = normalize_account_id(ad_account_id)
-    body = _get(account, {"fields": "name,currency,account_status,timezone_name"})
+    body = _get(account, {"fields": "name,currency,account_status,timezone_name"}, token=token)
     return {
         "id": account,
         "nome": body.get("name", account),
@@ -168,10 +185,14 @@ def collect_account(
     ad_account_id: str,
     dia: Optional[date] = None,
     top_campanhas: int = 5,
+    token: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Coleta o resumo de UM dia (padrão: ontem) de uma conta de anúncios,
     mais o acumulado do mês daquele dia e as campanhas com maior gasto.
+
+    Args:
+        token: token de acesso da BM dona da conta (padrão: META_ACCESS_TOKEN).
 
     Returns:
         {
@@ -186,18 +207,21 @@ def collect_account(
     account = normalize_account_id(ad_account_id)
     inicio_mes = dia.replace(day=1)
 
-    info = get_account_info(account)
+    token = token or resolve_token()
+    info = get_account_info(account, token=token)
 
-    rows = _insights(account, dia, dia)
+    rows = _insights(account, dia, dia, token=token)
     ontem = _parse_row(rows[0]) if rows else _empty_metrics()
 
-    rows_mes = _insights(account, inicio_mes, dia)
+    rows_mes = _insights(account, inicio_mes, dia, token=token)
     mes = _parse_row(rows_mes[0]) if rows_mes else _empty_metrics()
     mes["inicio"] = inicio_mes
 
     campanhas: list[dict[str, Any]] = []
     try:
-        rows_camp = _insights(account, dia, dia, level="campaign", extra_fields="campaign_name")
+        rows_camp = _insights(
+            account, dia, dia, level="campaign", extra_fields="campaign_name", token=token
+        )
         for r in rows_camp:
             parsed = _parse_row(r)
             parsed["nome"] = r.get("campaign_name", "(sem nome)")
@@ -229,6 +253,7 @@ def collect_all(
 ) -> dict[str, dict[str, Any]]:
     """
     Coleta todas as contas configuradas. Falha em uma conta não afeta as demais.
+    Cada conta usa o token de sua própria BM quando "token_env" está definido.
 
     Returns:
         {ad_account_id: dados | {"erro": "...", "dia": date}}
@@ -238,7 +263,7 @@ def collect_all(
     for acc in accounts:
         acc_id = normalize_account_id(acc["ad_account_id"])
         try:
-            results[acc_id] = collect_account(acc_id, dia)
+            results[acc_id] = collect_account(acc_id, dia, token=resolve_token(acc))
         except Exception as exc:  # noqa: BLE001 — isola falha por conta
             logger.error("Meta Ads %s falhou: %s", acc_id, exc, exc_info=True)
             results[acc_id] = {"erro": str(exc), "dia": dia}

@@ -99,6 +99,14 @@ Sai todo dia às **8h30** (`META_BRIEFING_HOUR/MINUTE` no `.env`).
    em `unit_groups.json`. Informe `chat_id` para mandar a outro grupo/número.
 3. Teste com `python main.py --dry-meta` e depois `--test-meta`.
 
+**Contas em outra Business Manager:** gere um token de System User naquela BM,
+coloque no `.env` em uma variável própria (ex.: `META_ACCESS_TOKEN_PORTUGAL=...`)
+e aponte o nome dela no campo `token_env` da conta:
+```json
+{ "ad_account_id": "act_999", "nome": "Portugal - Oeiras", "chat_id": "...@g.us", "token_env": "META_ACCESS_TOKEN_PORTUGAL" }
+```
+Contas sem `token_env` continuam usando `META_ACCESS_TOKEN`. O token nunca vai no JSON.
+
 ## Logs
 
 ```bash
