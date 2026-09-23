@@ -66,7 +66,7 @@ MONTHLY_BRIEFING_MINUTE = int(_optional("MONTHLY_BRIEFING_MINUTE", "0"))
 # Meta Ads (Graph API — Marketing Insights)
 # Token de System User do Business Manager com permissão ads_read (não expira).
 META_ACCESS_TOKEN = _optional("META_ACCESS_TOKEN")
-META_API_VERSION = _optional("META_API_VERSION", "v23.0")
+META_API_VERSION = _optional("META_API_VERSION", "v26.0")
 
 # Agendamento — Meta Ads (diário, 8h30)
 META_BRIEFING_HOUR = int(_optional("META_BRIEFING_HOUR", "8"))
