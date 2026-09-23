@@ -73,6 +73,7 @@ python main.py            # modo produção (cron às 8h)
 python main.py --dry-meta                          # relatórios Meta Ads no terminal
 python main.py --test-meta                         # envia relatórios Meta Ads agora
 python main.py --test-meta --meta-account act_123  # envia só o de uma conta
+python main.py --test-meta --meta-to 5547999999999@c.us  # envia tudo para esse número (teste)
 ```
 
 ## Relatório diário de Meta Ads

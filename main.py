@@ -11,6 +11,7 @@ Uso:
   python main.py --dry-meta    → exibe os relatórios Meta Ads no terminal, NÃO envia
   python main.py --test-meta   → envia os relatórios Meta Ads agora
   python main.py --test-meta --meta-account act_123 → envia só o relatório dessa conta
+  python main.py --test-meta --meta-to 5547999999999@c.us → envia tudo para esse número (teste)
 """
 
 import argparse
@@ -484,7 +485,11 @@ def _meta_ads_recipients(acc: dict) -> list[str]:
     return chat_ids
 
 
-def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None) -> None:
+def run_meta_ads_briefing(
+    dry_run: bool = False,
+    only_account: str | None = None,
+    redirect_to: str | None = None,
+) -> None:
     """
     Coleta as métricas de ontem de cada conta em config/meta_ads_accounts.json
     e envia um relatório por conta para os destinatários configurados.
@@ -492,6 +497,8 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
     Args:
         dry_run: apenas exibe as mensagens no terminal.
         only_account: se informado, processa apenas essa conta (com ou sem 'act_').
+        redirect_to: chat_id que recebe TODOS os envios no lugar dos destinatários
+            reais (modo teste). Força o envio mesmo em dia vazio e não grava estado.
     """
     import time
 
@@ -520,6 +527,9 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
     dia = date.today() - timedelta(days=1)
     resultados = meta_ads.collect_all(accounts, dia)
     state = meta_ads.load_state()
+    if redirect_to:
+        logger.info("MODO TESTE — todos os envios redirecionados para %s.", redirect_to)
+    alert_recipients = [redirect_to] if redirect_to else config.WAHA_RECIPIENTS
 
     envios = []
     for acc in accounts:
@@ -536,10 +546,10 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
 
         if dados.get("erro"):
             # Falha na coleta: avisa só a franqueadora, não o cliente/franqueado.
-            if not config.WAHA_RECIPIENTS:
+            if not alert_recipients:
                 logger.warning("Conta %s (%s) com erro e sem WAHA_RECIPIENTS — alerta só no log.", acc_id, nome)
                 continue
-            for chat_id in config.WAHA_RECIPIENTS:
+            for chat_id in alert_recipients:
                 envios.append({"chat_id": chat_id, "nome": f"{nome} [ALERTA]", "mensagem": msg})
             continue
 
@@ -554,9 +564,9 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
                 acc_id, nome, dia, dias_vazios,
             )
             if meta_ads.should_alert_empty(dias_vazios):
-                if config.WAHA_RECIPIENTS:
+                if alert_recipients:
                     alerta = whatsapp_meta_ads_message.compose_alerta_vazio(nome, dia, dias_vazios)
-                    for chat_id in config.WAHA_RECIPIENTS:
+                    for chat_id in alert_recipients:
                         envios.append(
                             {"chat_id": chat_id, "nome": f"{nome} [SEM VEICULAÇÃO]", "mensagem": alerta}
                         )
@@ -565,11 +575,11 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
                         "Conta %s (%s) vazia há %d dias e sem WAHA_RECIPIENTS — alerta só no log.",
                         acc_id, nome, dias_vazios,
                     )
-            if config.META_SKIP_EMPTY and not acc.get("enviar_vazio"):
+            if config.META_SKIP_EMPTY and not acc.get("enviar_vazio") and not redirect_to:
                 logger.info("Relatório de %s não enviado ao cliente (dia vazio).", nome)
                 continue
 
-        chat_ids = _meta_ads_recipients(acc)
+        chat_ids = [redirect_to] if redirect_to else _meta_ads_recipients(acc)
         if not chat_ids:
             logger.warning("Conta %s (%s) sem destinatário — pulando.", acc_id, nome)
             continue
@@ -593,7 +603,10 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
                 ok += 1
             time.sleep(1.5)
         logger.info("WhatsApp Meta Ads: %d/%d enviados.", ok, len(envios))
-        meta_ads.save_state(state)
+        if redirect_to:
+            logger.info("MODO TESTE — estado de dias vazios não gravado.")
+        else:
+            meta_ads.save_state(state)
 
     logger.info("=== Relatório Meta Ads concluído ===")
     _remove_file_handler(fh)
@@ -653,10 +666,20 @@ def main():
         "--meta-account", metavar="ACT_ID",
         help="Com --test-meta/--dry-meta: processa apenas essa conta (ex: act_123 ou 123)"
     )
+    parser.add_argument(
+        "--meta-to", metavar="CHAT_ID",
+        help="Com --test-meta: envia TUDO para este chat_id em vez dos destinatários reais "
+             "(ex: 5547999999999@c.us). Força o envio mesmo em dia vazio e não grava estado."
+    )
     args = parser.parse_args()
 
+    if args.meta_to and not (args.test_meta or args.dry_meta):
+        parser.error("--meta-to só faz sentido junto com --test-meta (ou --dry-meta)")
+
     if args.test_meta or args.dry_meta:
-        run_meta_ads_briefing(dry_run=args.dry_meta, only_account=args.meta_account)
+        run_meta_ads_briefing(
+            dry_run=args.dry_meta, only_account=args.meta_account, redirect_to=args.meta_to
+        )
         return
 
     if args.dry_unit is not None:
