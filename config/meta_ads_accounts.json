@@ -1,12 +1,13 @@
 {
   "_exemplo": {
-    "_doc": "Copie um objeto como este para dentro de 'accounts'. ad_account_id: ID da conta no Gerenciador de Anúncios (com ou sem 'act_'). nome: título da mensagem. unidade_id (opcional): se informado e não houver chat_id/chat_ids, usa os destinatários da unidade em unit_groups.json. chat_id / chat_ids (opcionais): destinatários diretos no formato do WAHA. token_env (opcional): nome da variável do .env com o token da Business Manager dona desta conta; sem ele, usa META_ACCESS_TOKEN. Nunca coloque o token aqui.",
+    "_doc": "Copie um objeto como este para dentro de 'accounts'. ad_account_id: ID da conta no Gerenciador de Anúncios (com ou sem 'act_'). nome: título da mensagem. unidade_id (opcional): se informado e não houver chat_id/chat_ids, usa os destinatários da unidade em unit_groups.json. chat_id / chat_ids (opcionais): destinatários diretos no formato do WAHA. token_env (opcional): nome da variável do .env com o token da Business Manager dona desta conta; sem ele, usa META_ACCESS_TOKEN. Nunca coloque o token aqui. enviar_vazio (opcional, padrão false): true envia o relatório ao cliente mesmo em dia sem veiculação.",
     "ad_account_id": "act_123456789012345",
     "nome": "Cidade - Bairro",
     "unidade_id": 20,
     "chat_id": "120363000000000000@g.us",
     "chat_ids": ["5547999999999@c.us"],
-    "token_env": "META_ACCESS_TOKEN_OUTRA_BM"
+    "token_env": "META_ACCESS_TOKEN_OUTRA_BM",
+    "enviar_vazio": false
   },
   "accounts": [
     {

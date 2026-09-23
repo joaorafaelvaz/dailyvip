@@ -519,6 +519,7 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
 
     dia = date.today() - timedelta(days=1)
     resultados = meta_ads.collect_all(accounts, dia)
+    state = meta_ads.load_state()
 
     envios = []
     for acc in accounts:
@@ -542,6 +543,32 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
                 envios.append({"chat_id": chat_id, "nome": f"{nome} [ALERTA]", "mensagem": msg})
             continue
 
+        # Dia sem veiculação (campanhas pausadas): conta a sequência, avisa a
+        # franqueadora a partir de META_EMPTY_ALERT_DAYS e, por padrão, não
+        # envia o relatório ao cliente.
+        vazio = meta_ads.is_empty(dados.get("ontem") or {})
+        dias_vazios = meta_ads.update_empty_streak(state, acc_id, dia, vazio)
+        if vazio:
+            logger.info(
+                "Conta %s (%s) sem veiculação em %s — %d dia(s) seguidos.",
+                acc_id, nome, dia, dias_vazios,
+            )
+            if meta_ads.should_alert_empty(dias_vazios):
+                if config.WAHA_RECIPIENTS:
+                    alerta = whatsapp_meta_ads_message.compose_alerta_vazio(nome, dia, dias_vazios)
+                    for chat_id in config.WAHA_RECIPIENTS:
+                        envios.append(
+                            {"chat_id": chat_id, "nome": f"{nome} [SEM VEICULAÇÃO]", "mensagem": alerta}
+                        )
+                else:
+                    logger.warning(
+                        "Conta %s (%s) vazia há %d dias e sem WAHA_RECIPIENTS — alerta só no log.",
+                        acc_id, nome, dias_vazios,
+                    )
+            if config.META_SKIP_EMPTY and not acc.get("enviar_vazio"):
+                logger.info("Relatório de %s não enviado ao cliente (dia vazio).", nome)
+                continue
+
         chat_ids = _meta_ads_recipients(acc)
         if not chat_ids:
             logger.warning("Conta %s (%s) sem destinatário — pulando.", acc_id, nome)
@@ -550,7 +577,7 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
             envios.append({"chat_id": chat_id, "nome": nome, "mensagem": msg})
 
     if dry_run:
-        logger.info("DRY RUN — relatórios Meta Ads não enviados.")
+        logger.info("DRY RUN — relatórios Meta Ads não enviados (estado não gravado).")
         for info in envios:
             print("\n" + "=" * 60)
             print(f"📣 META ADS — {info['nome']} → {info['chat_id']}")
@@ -566,6 +593,7 @@ def run_meta_ads_briefing(dry_run: bool = False, only_account: str | None = None
                 ok += 1
             time.sleep(1.5)
         logger.info("WhatsApp Meta Ads: %d/%d enviados.", ok, len(envios))
+        meta_ads.save_state(state)
 
     logger.info("=== Relatório Meta Ads concluído ===")
     _remove_file_handler(fh)

@@ -247,6 +247,72 @@ def collect_account(
     }
 
 
+def is_empty(metrics: dict[str, Any]) -> bool:
+    """Dia sem veiculação: gasto e impressões zerados (campanhas pausadas/desativadas)."""
+    return _to_float(metrics.get("gasto")) == 0 and _to_int(metrics.get("impressoes")) == 0
+
+
+# ── Estado: dias vazios consecutivos por conta ───────────────────────────────
+# Arquivo: {"act_123": {"dias_vazios": 3, "ultimo_dia": "YYYY-MM-DD"}, ...}
+
+def load_state(path: Optional[str] = None) -> dict[str, dict[str, Any]]:
+    path = path or config.META_ADS_STATE_PATH
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, IOError) as exc:
+        logger.warning("Estado Meta Ads ilegível em %s (%s) — reiniciando contagem.", path, exc)
+        return {}
+
+
+def save_state(state: dict[str, dict[str, Any]], path: Optional[str] = None) -> None:
+    path = path or config.META_ADS_STATE_PATH
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except IOError as exc:
+        logger.error("Não foi possível gravar estado Meta Ads em %s: %s", path, exc)
+
+
+def update_empty_streak(
+    state: dict[str, dict[str, Any]], account: str, dia: date, vazio: bool
+) -> int:
+    """
+    Atualiza e retorna a sequência de dias vazios consecutivos da conta.
+    Idempotente para o mesmo dia (rodar duas vezes não conta duas vezes).
+    """
+    account = normalize_account_id(account)
+    entry = state.get(account) or {}
+    dias = _to_int(entry.get("dias_vazios"))
+    try:
+        ultimo = date.fromisoformat(entry.get("ultimo_dia", ""))
+    except (TypeError, ValueError):
+        ultimo = None
+
+    if not vazio:
+        dias = 0
+    elif ultimo == dia:
+        dias = max(dias, 1)
+    elif ultimo == dia - timedelta(days=1):
+        dias += 1
+    else:
+        dias = 1
+
+    state[account] = {"dias_vazios": dias, "ultimo_dia": dia.isoformat()}
+    return dias
+
+
+def should_alert_empty(dias_vazios: int, alert_days: Optional[int] = None) -> bool:
+    """Alerta no N-ésimo dia vazio e depois a cada 7 dias enquanto continuar vazio."""
+    n = config.META_EMPTY_ALERT_DAYS if alert_days is None else alert_days
+    if n <= 0 or dias_vazios < n:
+        return False
+    return (dias_vazios - n) % 7 == 0
+
+
 def collect_all(
     accounts: list[dict[str, Any]],
     dia: Optional[date] = None,

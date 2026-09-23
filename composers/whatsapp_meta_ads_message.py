@@ -52,6 +52,19 @@ def _bloco_metricas(m: dict[str, Any], moeda: str) -> list[str]:
     return lines
 
 
+def compose_alerta_vazio(nome: str, dia: date, dias_vazios: int) -> str:
+    """Aviso à franqueadora: conta sem veiculação há N dias consecutivos."""
+    return "\n".join([
+        f"⚠️ *META ADS — SEM VEICULAÇÃO* — {dia.strftime('%d/%m/%Y')}",
+        f"📍 *{nome}*",
+        _sep(),
+        f"A conta está há *{dias_vazios} dia(s)* consecutivos sem investimento nem impressões.",
+        "Verifique se as campanhas foram pausadas de propósito ou se há problema de "
+        "pagamento/aprovação no Gerenciador de Anúncios.",
+        "_O relatório diário desta unidade não está sendo enviado enquanto não houver veiculação._",
+    ])
+
+
 def compose(dados: dict[str, Any], nome_exibicao: Optional[str] = None) -> str:
     """
     Gera a mensagem WhatsApp do relatório de Meta Ads de uma conta.

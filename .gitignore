@@ -16,8 +16,9 @@ build/
 *.log
 *.log.*
 
-# Saída gerada (não versionar HTMLs)
+# Saída gerada (não versionar HTMLs nem estado do Meta Ads)
 output/*.html
+output/*.json
 
 # IDE
 .vscode/

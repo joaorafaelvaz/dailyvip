@@ -72,6 +72,12 @@ META_API_VERSION = _optional("META_API_VERSION", "v26.0")
 META_BRIEFING_HOUR = int(_optional("META_BRIEFING_HOUR", "8"))
 META_BRIEFING_MINUTE = int(_optional("META_BRIEFING_MINUTE", "30"))
 
+# Meta Ads — dia sem veiculação (gasto e impressões zerados)
+# Não envia o relatório ao cliente quando ontem foi vazio (padrão: ligado).
+META_SKIP_EMPTY = _optional("META_SKIP_EMPTY", "true").lower() in ("1", "true", "yes")
+# Avisa a franqueadora a partir de N dias vazios consecutivos (0 desativa).
+META_EMPTY_ALERT_DAYS = int(_optional("META_EMPTY_ALERT_DAYS", "3"))
+
 # Seções opcionais dos relatórios (ocultas por padrão — reative via .env)
 SHOW_SATISFYCAM = _optional("SHOW_SATISFYCAM", "false").lower() in ("1", "true", "yes")
 SHOW_INADIMPLENCIA = _optional("SHOW_INADIMPLENCIA", "false").lower() in ("1", "true", "yes")
@@ -80,6 +86,9 @@ SHOW_INADIMPLENCIA = _optional("SHOW_INADIMPLENCIA", "false").lower() in ("1", "
 DASHBOARD_BASE_URL = _optional("DASHBOARD_BASE_URL", "http://localhost/daily/output")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Estado do relatório Meta Ads (dias vazios consecutivos por conta)
+META_ADS_STATE_PATH = os.path.join(OUTPUT_DIR, "meta_ads_state.json")
 
 # Mapeamento unidade → grupo WhatsApp do franqueado
 _UNIT_GROUPS_PATH = os.path.join(os.path.dirname(__file__), "config", "unit_groups.json")

@@ -107,6 +107,13 @@ e aponte o nome dela no campo `token_env` da conta:
 ```
 Contas sem `token_env` continuam usando `META_ACCESS_TOKEN`. O token nunca vai no JSON.
 
+**Dia sem veiculação:** se ontem a conta teve gasto e impressões zerados (campanhas
+pausadas), o relatório **não é enviado** ao cliente (`META_SKIP_EMPTY=true`, padrão).
+A partir do 3º dia vazio consecutivo (`META_EMPTY_ALERT_DAYS`) a franqueadora recebe
+um aviso, repetido a cada 7 dias enquanto continuar vazio. Para uma conta receber o
+relatório mesmo vazio, use `"enviar_vazio": true` na entrada dela. A contagem fica em
+`output/meta_ads_state.json`.
+
 ## Logs
 
 ```bash
