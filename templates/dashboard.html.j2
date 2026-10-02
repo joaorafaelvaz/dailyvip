@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Daily Briefing VIP — {{ hoje.strftime('%d/%m/%Y') }}</title>
+  {# periodo_tipo/periodo_label só existem no dashboard semanal/mensal; no diário caem no texto padrão #}
+  {% set titulo = 'Resumo Semanal VIP' if periodo_tipo == 'semanal' else ('Resumo Mensal VIP' if periodo_tipo == 'mensal' else 'Daily Briefing VIP') %}
+  {% set subtitulo = periodo_label if periodo_tipo else hoje.strftime('%A, %d de %B de %Y').capitalize() %}
+  <title>{{ titulo }} — {{ periodo_label if periodo_tipo else hoje.strftime('%d/%m/%Y') }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { font-family: 'Segoe UI', system-ui, sans-serif; }
@@ -21,8 +24,8 @@
   <header class="bg-gradient-to-r from-gray-900 to-gray-700 text-white px-6 py-5 mb-6">
     <div class="max-w-7xl mx-auto flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight">📊 Daily Briefing VIP</h1>
-        <p class="text-gray-300 text-sm mt-1">{{ hoje.strftime('%A, %d de %B de %Y').capitalize() }}</p>
+        <h1 class="text-2xl font-bold tracking-tight">📊 {{ titulo }}</h1>
+        <p class="text-gray-300 text-sm mt-1">{{ subtitulo }}</p>
       </div>
       <div class="text-right text-sm text-gray-400">
         Gerado às {{ hoje.strftime('%H:%M') if hoje else '08:00' }}<br>
@@ -39,7 +42,7 @@
       <!-- Faturamento -->
       {% set fat = data.get('faturamento') %}
       <div class="bg-white rounded-2xl shadow p-5">
-        <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Faturamento Ontem</p>
+        <p class="text-xs text-gray-500 uppercase font-semibold mb-1">{{ 'Faturamento no Período' if periodo_tipo else 'Faturamento Ontem' }}</p>
         <p class="text-2xl font-bold text-gray-900">
           {{ fat.total_rede | brl if fat else '--' }}
         </p>
@@ -245,11 +248,11 @@
         {% if perfex %}
           <div class="flex gap-6 mb-4">
             <div class="text-center">
-              <p class="text-3xl font-bold text-blue-600">{{ perfex.novos_24h }}</p>
-              <p class="text-xs text-gray-500">novos leads 24h</p>
+              <p class="text-3xl font-bold text-blue-600">{{ perfex.novos_periodo }}</p>
+              <p class="text-xs text-gray-500">novos leads {{ 'no período' if periodo_tipo else '24h' }}</p>
             </div>
             <div class="text-center">
-              <p class="text-3xl font-bold text-gray-700">{{ perfex.total_leads }}</p>
+              <p class="text-3xl font-bold text-gray-700">{{ perfex.total_pipeline }}</p>
               <p class="text-xs text-gray-500">total no pipeline</p>
             </div>
           </div>
