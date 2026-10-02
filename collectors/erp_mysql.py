@@ -346,9 +346,18 @@ def get_agenda_ontem() -> dict[str, Any]:
             SUM(a.fechamento IS NULL AND LOWER(a.origem) != 'app')     AS agend_recepcao
         FROM agendas a
         JOIN usuarios usr ON usr.id = a.colaborador
+        JOIN grupos g     ON g.id  = usr.grupo
         JOIN unidades u   ON u.id  = usr.unidade
         WHERE a.data >= %s AND a.data < %s
           AND a.status = 1
+          -- Mesmos filtros de _get_slots_disponiveis: só barbeiros ativos contam.
+          -- Sem isso, ex-barbeiros (status=0) com o dia bloqueado entram em
+          -- ocupados/fechamentos mas não no total de slots, inflando a ocupação.
+          AND g.colaborador = 1
+          AND usr.status = 1
+          AND u.status = 1
+          AND (usr.ferias_inicio IS NULL
+               OR DATE(a.data) NOT BETWEEN usr.ferias_inicio AND usr.ferias_fim)
         GROUP BY u.id, u.nome, u.cidade
         ORDER BY u.nome
         """,
@@ -436,9 +445,18 @@ def get_agenda_hoje() -> dict[str, Any]:
             SUM(a.fechamento IS NOT NULL)       AS fechamentos
         FROM agendas a
         JOIN usuarios usr ON usr.id = a.colaborador
+        JOIN grupos g     ON g.id  = usr.grupo
         JOIN unidades u   ON u.id  = usr.unidade
         WHERE a.data >= %s AND a.data < %s
           AND a.status = 1
+          -- Mesmos filtros de _get_slots_disponiveis: só barbeiros ativos contam.
+          -- Sem isso, ex-barbeiros (status=0) com o dia bloqueado entram em
+          -- ocupados/fechamentos mas não no total de slots, inflando a ocupação.
+          AND g.colaborador = 1
+          AND usr.status = 1
+          AND u.status = 1
+          AND (usr.ferias_inicio IS NULL
+               OR DATE(a.data) NOT BETWEEN usr.ferias_inicio AND usr.ferias_fim)
         GROUP BY u.id, u.nome, u.cidade
         ORDER BY u.nome
         """,
@@ -816,9 +834,18 @@ def get_agenda_range(data_inicio: date, data_fim: date) -> dict[str, Any]:
             SUM(a.fechamento IS NULL AND LOWER(a.origem) != 'app')     AS agend_recepcao
         FROM agendas a
         JOIN usuarios usr ON usr.id = a.colaborador
+        JOIN grupos g     ON g.id  = usr.grupo
         JOIN unidades u   ON u.id  = usr.unidade
         WHERE a.data >= %s AND a.data < %s
           AND a.status = 1
+          -- Mesmos filtros de _get_slots_disponiveis: só barbeiros ativos contam.
+          -- Sem isso, ex-barbeiros (status=0) com o dia bloqueado entram em
+          -- ocupados/fechamentos mas não no total de slots, inflando a ocupação.
+          AND g.colaborador = 1
+          AND usr.status = 1
+          AND u.status = 1
+          AND (usr.ferias_inicio IS NULL
+               OR DATE(a.data) NOT BETWEEN usr.ferias_inicio AND usr.ferias_fim)
         GROUP BY u.id, u.nome, u.cidade
         ORDER BY u.nome
         """,
