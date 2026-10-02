@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
@@ -28,7 +28,7 @@ def generate(data: dict[str, Any]) -> str:
     template = env.get_template("dashboard.html.j2")
     html = template.render(
         data=data,
-        hoje=date.today(),
+        hoje=datetime.now(),  # datetime (não date) para "Gerado às HH:MM" sair com a hora real
         show_satisfycam=config.SHOW_SATISFYCAM,
         show_inadimplencia=config.SHOW_INADIMPLENCIA,
     )
