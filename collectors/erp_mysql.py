@@ -320,10 +320,14 @@ def get_agenda_ontem() -> dict[str, Any]:
 
     Ocupação = (registros na agenda) / (slots disponíveis da escala).
     - total_slots: calculado da escala dos barbeiros (horário trabalho / tempo_atendimento)
-    - realizados: checkin=1 (atendimentos concluídos)
-    - noshows: checkin=0 AND fechamento IS NULL (cliente não compareceu)
-    - fechamentos: fechamento IS NOT NULL (slots bloqueados)
-    - ocupados: realizados + noshows + fechamentos (todos os slots usados)
+    - realizados: checkout=1 (atendimento finalizado — "preto" na grade do ERP).
+      NÃO usar checkin: é só "em atendimento" ("verde") e muitas unidades
+      finalizam pela comanda sem clicar check-in.
+    - noshows: checkin=0 AND checkout=0 AND fechamento IS NULL
+      (cliente não compareceu — "vermelho" na grade)
+    - fechamentos: fechamento IS NOT NULL (horário bloqueado pela recepção — "roxo")
+    - ocupados: COUNT de todos os registros (inclui o caso checkin=1/checkout=0,
+      cliente chegou mas não finalizou)
     """
     ontem = date.today() - timedelta(days=1)
     ontem_fim = ontem + timedelta(days=1)
@@ -339,8 +343,9 @@ def get_agenda_ontem() -> dict[str, Any]:
             u.nome AS unidade_nome,
             u.cidade,
             COUNT(a.id)                                                AS ocupados,
-            SUM(a.checkin = 1)                                         AS realizados,
-            SUM(a.checkin = 0 AND a.fechamento IS NULL)                AS noshows,
+            SUM(a.checkout = 1)                                        AS realizados,
+            SUM(a.checkin = 0 AND a.checkout = 0
+                AND a.fechamento IS NULL)                              AS noshows,
             SUM(a.fechamento IS NOT NULL)                              AS fechamentos,
             SUM(a.fechamento IS NULL AND LOWER(a.origem) = 'app')      AS agend_app,
             SUM(a.fechamento IS NULL AND LOWER(a.origem) != 'app')     AS agend_recepcao
@@ -827,8 +832,9 @@ def get_agenda_range(data_inicio: date, data_fim: date) -> dict[str, Any]:
             u.nome AS unidade_nome,
             u.cidade,
             COUNT(a.id)                                                AS ocupados,
-            SUM(a.checkin = 1)                                         AS realizados,
-            SUM(a.checkin = 0 AND a.fechamento IS NULL)                AS noshows,
+            SUM(a.checkout = 1)                                        AS realizados,
+            SUM(a.checkin = 0 AND a.checkout = 0
+                AND a.fechamento IS NULL)                              AS noshows,
             SUM(a.fechamento IS NOT NULL)                              AS fechamentos,
             SUM(a.fechamento IS NULL AND LOWER(a.origem) = 'app')      AS agend_app,
             SUM(a.fechamento IS NULL AND LOWER(a.origem) != 'app')     AS agend_recepcao
