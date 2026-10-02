@@ -137,6 +137,48 @@
     </div>
     {% endif %}
 
+    <!-- ── Ranking de Barbeiros (apenas semanal/mensal) ─────────────────────── -->
+    {% set profs = data.get('profissionais') %}
+    {% if periodo_tipo and profs %}
+    {% set profs_rank = profs | sort(attribute='faturamento', reverse=True) %}
+    <div class="bg-white rounded-2xl shadow p-5 mb-6">
+      <h2 class="text-lg font-bold mb-1">💈 Ranking de Barbeiros — Faturamento</h2>
+      <p class="text-xs text-gray-500 mb-4">
+        {{ periodo_label }} · {{ profs | length }} profissionais · exibindo top {{ [profs_rank | length, 20] | min }}
+      </p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs text-gray-500 border-b">
+              <th class="pb-2 pr-4">#</th>
+              <th class="pb-2 pr-4">Barbeiro</th>
+              <th class="pb-2 pr-4">Unidade</th>
+              <th class="pb-2 pr-4 text-right">Serviços</th>
+              <th class="pb-2 pr-4 text-right">Produtos</th>
+              <th class="pb-2 pr-4 text-right">Faturamento</th>
+              <th class="pb-2 pr-4 text-right">Ticket Médio</th>
+              <th class="pb-2 text-right">% da Unidade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in profs_rank[:20] %}
+            <tr class="border-b border-gray-50 hover:bg-gray-50 {% if loop.index <= 5 %}bg-green-50{% endif %}">
+              <td class="py-2 pr-4 text-gray-400 font-mono">{{ loop.index }}</td>
+              <td class="py-2 pr-4 font-medium">{{ p.barbeiro_nome }}</td>
+              <td class="py-2 pr-4 text-gray-500">{{ p.unidade_nome }}</td>
+              <td class="py-2 pr-4 text-right text-gray-600">{{ p.total_servicos or 0 }}</td>
+              <td class="py-2 pr-4 text-right text-gray-600">{{ p.total_produtos or 0 }}</td>
+              <td class="py-2 pr-4 text-right font-semibold">{{ p.faturamento | brl }}</td>
+              <td class="py-2 pr-4 text-right text-gray-600">{{ p.ticket_medio | brl }}</td>
+              <td class="py-2 text-right text-gray-600">{{ p.pct_unidade | pct }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
 
       <!-- ── Inadimplência ── -->
