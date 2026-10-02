@@ -166,8 +166,8 @@
               <td class="py-2 pr-4 text-gray-400 font-mono">{{ loop.index }}</td>
               <td class="py-2 pr-4 font-medium">{{ p.barbeiro_nome }}</td>
               <td class="py-2 pr-4 text-gray-500">{{ p.unidade_nome }}</td>
-              <td class="py-2 pr-4 text-right text-gray-600">{{ p.total_servicos or 0 }}</td>
-              <td class="py-2 pr-4 text-right text-gray-600">{{ p.total_produtos or 0 }}</td>
+              <td class="py-2 pr-4 text-right text-gray-600">{{ (p.total_servicos or 0) | int }}</td>
+              <td class="py-2 pr-4 text-right text-gray-600">{{ (p.total_produtos or 0) | int }}</td>
               <td class="py-2 pr-4 text-right font-semibold">{{ p.faturamento | brl }}</td>
               <td class="py-2 pr-4 text-right text-gray-600">{{ p.ticket_medio | brl }}</td>
               <td class="py-2 text-right text-gray-600">{{ p.pct_unidade | pct }}</td>
