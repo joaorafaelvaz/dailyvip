@@ -20,7 +20,8 @@
     {
       "ad_account_id": "act_1485450173616244",
       "nome": "Florianópolis - SC 401",
-      "unidade_id": 61
+      "unidade_id": 61,
+      "token_env": "META_ACCESS_TOKEN_BVIP"
     }
   ]
 }
