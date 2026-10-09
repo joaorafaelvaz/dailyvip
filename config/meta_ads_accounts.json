@@ -5,7 +5,9 @@
     "nome": "Cidade - Bairro",
     "unidade_id": 20,
     "chat_id": "120363000000000000@g.us",
-    "chat_ids": ["5547999999999@c.us"],
+    "chat_ids": [
+      "5547999999999@c.us"
+    ],
     "token_env": "META_ACCESS_TOKEN_OUTRA_BM",
     "enviar_vazio": false
   },
@@ -14,6 +16,11 @@
       "ad_account_id": "act_4727286224164829",
       "nome": "São José - Barreiros",
       "unidade_id": 63
+    },
+    {
+      "ad_account_id": "act_1485450173616244",
+      "nome": "Florianópolis - SC 401",
+      "unidade_id": 61
     }
   ]
 }
