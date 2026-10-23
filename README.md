@@ -24,10 +24,15 @@ daily/
 │   └── meta_ads_accounts.json # Conta de anúncios Meta → destinatários
 ├── senders/                   # Cliente WAHA
 ├── templates/                 # Template Jinja2 do dashboard
+├── admin/                     # Área administrativa (Flask): relatórios por data + mensagens agendadas
+├── scheduler/                 # Job de envio das mensagens agendadas (roda no daily-briefing)
 ├── output/                    # HTMLs gerados (não versionados)
+├── data/                      # agendamentos.db (SQLite, não versionado)
 └── deploy/
     ├── nginx.conf             # Config NGINX para status.franquiabv.com.br
-    ├── daily-briefing.service # Serviço systemd
+    ├── nginx-admin.conf       # Snippet NGINX do /admin (proxy para o Flask)
+    ├── daily-briefing.service # Serviço systemd do briefing
+    ├── daily-admin.service    # Serviço systemd da área administrativa (gunicorn :8081)
     ├── setup.sh               # Instalação inicial no servidor
     ├── deploy.sh              # Atualização (git pull + restart)
     └── init-repo.sh           # Inicializa o repositório no GitHub (uma vez)
@@ -76,6 +81,48 @@ python main.py --test-meta --meta-account act_123  # envia só o de uma conta
 python main.py --test-meta --meta-to 5547999999999@c.us  # envia tudo para esse número (teste)
 ```
 
+## Área administrativa (/admin)
+
+Sob o mesmo login do dashboard (Basic Auth do NGINX), em **https://status.franquiabv.com.br/admin/**:
+
+- **/admin/relatorios** — lista os dashboards já gerados e gera o de qualquer data (diário, semanal, mensal) sob demanda.
+- **/admin/mensagens** — agenda mensagens de WhatsApp para unidades/franqueadora (envio único ou recorrente),
+  com texto livre ou gerado por IA. O envio é feito pelo serviço `daily-briefing` (job de 1 min).
+
+É um app Flask servido pelo gunicorn em `127.0.0.1:8081` (serviço `daily-admin`); o NGINX faz o proxy
+de `/admin/` via o snippet `/etc/nginx/snippets/daily-admin.conf` (origem: `deploy/nginx-admin.conf`).
+
+Variáveis novas no `.env`:
+
+| Variável | Uso |
+|---|---|
+| `ANTHROPIC_API_KEY` | Opcional. Sem ela o botão "Gerar com IA" fica desabilitado. |
+| `ADMIN_TEST_CHAT_ID` | Opcional. Chat do WhatsApp que recebe o "Enviar teste para mim" (ex.: `5547999999999@c.us`). |
+| `ADMIN_SECRET_KEY` | Segredo de sessão/CSRF. `setup.sh` e `deploy.sh` geram um se estiver ausente ou vazio. |
+
+**Passo manual (uma única vez) em servidor já existente:** o arquivo ativo do NGINX é gerenciado pelo
+Certbot e o `deploy.sh` não o reescreve. Dentro do bloco `server` 443, logo após `auth_basic_user_file`, adicione:
+
+```nginx
+include snippets/daily-admin.conf;
+```
+
+e rode `nginx -t && systemctl reload nginx`. O `deploy.sh` avisa enquanto o `include` não existir.
+Em instalações novas o `deploy/nginx.conf` já traz o `include`.
+
+Backup: `data/agendamentos.db` é o único arquivo com estado (agendamentos + histórico de envios).
+
+Rodar localmente (HTTP puro, sem NGINX):
+
+```bash
+ADMIN_INSECURE_COOKIE=1 .venv/bin/python -m flask --app admin.app run --port 8081
+# abra http://127.0.0.1:8081/admin/
+```
+
+- `ADMIN_INSECURE_COOKIE=1` libera o cookie de sessão em HTTP. **Somente para uso local** — nunca no `.env`
+  de produção (o `daily-admin.service` não define essa variável; em produção o cookie exige HTTPS).
+- `ADMIN_NO_FILE_LOG=1` desliga o `admin.log` (usado pelos testes).
+
 ## Relatório diário de Meta Ads
 
 Envia, por conta de anúncios, o resumo de **ontem** (investimento, alcance,
@@ -118,7 +165,11 @@ relatório mesmo vazio, use `"enviar_vazio": true` na entrada dela. A contagem f
 ## Logs
 
 ```bash
-# No servidor:
+# No servidor — briefing (inclui o job das mensagens agendadas):
 journalctl -u daily-briefing -f
 tail -f /opt/barbearia-daily/daily.log
+
+# Área administrativa — app (admin.log, rotacionado 5 MB × 7) e gunicorn (journal):
+tail -f /opt/barbearia-daily/admin.log
+journalctl -u daily-admin -f
 ```

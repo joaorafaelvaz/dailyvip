@@ -15,6 +15,7 @@ APP_USER="briefing"
 DOMAIN="status.franquiabv.com.br"
 NGINX_CONF="/etc/nginx/sites-available/daily-briefing"
 SERVICE_FILE="/etc/systemd/system/daily-briefing.service"
+ADMIN_SERVICE_FILE="/etc/systemd/system/daily-admin.service"
 
 # ── Cores para output ─────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
@@ -51,7 +52,7 @@ else
 fi
 
 # Cria diretórios necessários
-mkdir -p "$APP_DIR/output" "$APP_DIR/credentials"
+mkdir -p "$APP_DIR/output" "$APP_DIR/credentials" "$APP_DIR/data"   # data/: SQLite dos agendamentos
 
 # ── 4. Virtualenv e dependências Python ───────────────────────────────────────
 info "Criando virtualenv e instalando pacotes Python..."
@@ -73,6 +74,15 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
     warn "========================================================"
 else
     info ".env já existe, mantendo configuração atual."
+fi
+
+# Segredo do app administrativo (sessão/CSRF): gera se ausente ou vazio
+if ! grep -q '^ADMIN_SECRET_KEY=.\+' "$APP_DIR/.env"; then
+    if grep -q '^ADMIN_SECRET_KEY=' "$APP_DIR/.env"; then
+        sed -i "s|^ADMIN_SECRET_KEY=.*|ADMIN_SECRET_KEY=$(openssl rand -hex 32)|" "$APP_DIR/.env"
+    else
+        echo "ADMIN_SECRET_KEY=$(openssl rand -hex 32)" >> "$APP_DIR/.env"
+    fi
 fi
 
 # ── 6. Permissões ─────────────────────────────────────────────────────────────
@@ -110,6 +120,9 @@ ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/daily-briefing
 # Remove default se ainda estiver lá
 rm -f /etc/nginx/sites-enabled/default
 
+# Snippet da área administrativa (/admin -> Flask em 127.0.0.1:8081), incluído pelo nginx.conf
+mkdir -p /etc/nginx/snippets && cp "$APP_DIR/deploy/nginx-admin.conf" /etc/nginx/snippets/daily-admin.conf
+
 # Testa a configuração
 nginx -t
 systemctl reload nginx
@@ -127,13 +140,14 @@ fi
 # ── 10. Serviço systemd ────────────────────────────────────────────────────────
 info "Instalando serviço systemd..."
 cp "$APP_DIR/deploy/daily-briefing.service" "$SERVICE_FILE"
+cp "$APP_DIR/deploy/daily-admin.service" "$ADMIN_SERVICE_FILE"
 
 # Ajusta caminho caso APP_DIR seja diferente do padrão
-sed -i "s|/opt/barbearia-daily|$APP_DIR|g" "$SERVICE_FILE"
+sed -i "s|/opt/barbearia-daily|$APP_DIR|g" "$SERVICE_FILE" "$ADMIN_SERVICE_FILE"
 
 systemctl daemon-reload
-systemctl enable daily-briefing
-systemctl start  daily-briefing
+systemctl enable daily-briefing daily-admin
+systemctl start  daily-briefing daily-admin
 
 # ── 11. Verificação final ─────────────────────────────────────────────────────
 echo ""
@@ -141,6 +155,7 @@ echo "============================================================"
 info "Instalação concluída!"
 echo ""
 echo -e "  Serviço:   ${GREEN}$(systemctl is-active daily-briefing)${NC}"
+echo -e "  Admin:     ${GREEN}$(systemctl is-active daily-admin)${NC}  (https://$DOMAIN/admin/)"
 echo -e "  Dashboard: ${GREEN}https://$DOMAIN${NC}"
 echo ""
 echo "  Próximos passos:"

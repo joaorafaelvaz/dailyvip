@@ -49,6 +49,28 @@ if git -C "$APP_DIR" diff --name-only "$LOCAL" "$REMOTE" | grep -q "requirements
     "$APP_DIR/.venv/bin/pip" install --quiet -r "$APP_DIR/requirements.txt"
 fi
 
+# 3b. Snippet do nginx da área administrativa (arquivo próprio; nunca toca no do Certbot)
+SNIPPET_SRC="$APP_DIR/deploy/nginx-admin.conf"
+SNIPPET_DST="/etc/nginx/snippets/daily-admin.conf"
+if [[ ! -f "$SNIPPET_DST" ]] || ! cmp -s "$SNIPPET_SRC" "$SNIPPET_DST"; then
+    info "Snippet do nginx (/admin) mudou — aplicando..."
+    mkdir -p /etc/nginx/snippets
+    [[ -f "$SNIPPET_DST" ]] && cp "$SNIPPET_DST" "$SNIPPET_DST.bak"
+    cp "$SNIPPET_SRC" "$SNIPPET_DST"
+    if nginx -t; then
+        systemctl reload nginx
+    else
+        warn "nginx -t falhou com o snippet novo — restaurando o anterior."
+        if [[ -f "$SNIPPET_DST.bak" ]]; then cp "$SNIPPET_DST.bak" "$SNIPPET_DST"; else rm -f "$SNIPPET_DST"; fi
+        nginx -t && systemctl reload nginx || true
+    fi
+fi
+if ! grep -q "snippets/daily-admin.conf" /etc/nginx/sites-available/daily-briefing 2>/dev/null; then
+    warn "A config ativa do nginx ainda NÃO inclui o snippet do /admin. Uma única vez, adicione dentro do bloco server (443):"
+    warn "    include snippets/daily-admin.conf;"
+    warn "  e rode: nginx -t && systemctl reload nginx"
+fi
+
 # 3. Atualiza config do NGINX se mudou
 if git -C "$APP_DIR" diff --name-only "$LOCAL" "$REMOTE" | grep -q "deploy/nginx.conf"; then
     NGINX_LIVE=/etc/nginx/sites-available/daily-briefing
@@ -73,17 +95,35 @@ if git -C "$APP_DIR" diff --name-only "$LOCAL" "$REMOTE" | grep -q "deploy/daily
     systemctl daemon-reload
 fi
 
-# 5. Reinicia o serviço
-info "Reiniciando serviço..."
-systemctl restart "$SERVICE"
-
-# Aguarda 3s e verifica status
-sleep 3
-if systemctl is-active --quiet "$SERVICE"; then
-    info "Serviço ativo. Deploy concluído com sucesso."
-else
-    echo ""
-    warn "Serviço não iniciou corretamente. Verifique:"
-    warn "  journalctl -u $SERVICE -n 30"
-    exit 1
+# 4c. Segredo do app administrativo (sessao/CSRF): gera se ausente ou vazio
+if ! grep -qE '^ADMIN_SECRET_KEY=.+' "$APP_DIR/.env"; then
+    info "Gerando ADMIN_SECRET_KEY no .env..."
+    sed -i '/^ADMIN_SECRET_KEY=/d' "$APP_DIR/.env"
+    echo "ADMIN_SECRET_KEY=$(openssl rand -hex 32)" >> "$APP_DIR/.env"
 fi
+
+# 4b. Serviço da área administrativa (instala na primeira vez, atualiza se mudou)
+ADMIN_UNIT_SRC="$APP_DIR/deploy/daily-admin.service"
+ADMIN_UNIT_DST="/etc/systemd/system/daily-admin.service"
+if [[ ! -f "$ADMIN_UNIT_DST" ]] || ! cmp -s "$ADMIN_UNIT_SRC" "$ADMIN_UNIT_DST"; then
+    info "Instalando/atualizando daily-admin.service..."
+    cp "$ADMIN_UNIT_SRC" "$ADMIN_UNIT_DST"
+    systemctl daemon-reload
+    systemctl enable daily-admin >/dev/null 2>&1 || true
+fi
+
+# 4d. data/ (SQLite dos agendamentos): o app cria o schema ao importar, então o
+# diretório precisa existir e ser gravável pelo usuário do serviço.
+mkdir -p "$APP_DIR/data" && chown briefing:briefing "$APP_DIR/data"
+
+# 5. Reinicia os serviços
+for svc in "$SERVICE" daily-admin; do
+    info "Reiniciando $svc..."
+    systemctl restart "$svc"
+done
+sleep 3
+ok=1
+for svc in "$SERVICE" daily-admin; do
+    if systemctl is-active --quiet "$svc"; then info "$svc ativo."; else warn "$svc NÃO está ativo — journalctl -u $svc -n 30"; ok=0; fi
+done
+if [[ $ok -eq 1 ]]; then info "Deploy concluído com sucesso."; else exit 1; fi
