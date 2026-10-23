@@ -3,7 +3,7 @@
 import logging
 import sqlite3
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Optional
 
 import config
 
@@ -17,9 +17,10 @@ def _query(sql: str, args=()) -> list[dict]:
         return [dict(row) for row in cur.fetchall()]
 
 
-def get_relatorio_ontem() -> dict[str, Any]:
-    """Retorna o DailyReport do dia anterior."""
-    ontem = date.today() - timedelta(days=1)
+def get_relatorio_ontem(hoje: Optional[date] = None) -> dict[str, Any]:
+    """Retorna o DailyReport do dia anterior à data de referência `hoje`."""
+    hoje = hoje or config.hoje_local()
+    ontem = hoje - timedelta(days=1)
     rows = _query(
         """
         SELECT
@@ -85,10 +86,10 @@ def get_relatorio_ontem() -> dict[str, Any]:
     }
 
 
-def collect_all() -> dict[str, Any]:
+def collect_all(hoje: Optional[date] = None) -> dict[str, Any]:
     result = {}
     try:
-        result["relatorio"] = get_relatorio_ontem()
+        result["relatorio"] = get_relatorio_ontem(hoje)
     except Exception as exc:
         logger.error("SatisfyCAM collector falhou: %s", exc, exc_info=True)
         result["relatorio"] = None

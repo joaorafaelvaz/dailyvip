@@ -141,13 +141,16 @@ def _fmt_date_br(iso_date: str) -> str:
 # ── Pipeline principal ────────────────────────────────────────────────────────
 
 def get_leads_pipeline(data_inicio: Optional[date] = None,
-                       data_fim: Optional[date] = None) -> dict[str, Any]:
+                       data_fim: Optional[date] = None,
+                       hoje: Optional[date] = None) -> dict[str, Any]:
     """
     Retorna dados completos do pipeline de leads.
 
     Args:
         data_inicio: início do período (inclusive). None = últimas 24h.
         data_fim: fim do período (inclusive). None = hoje.
+        hoje: data de referência de um relatório retroativo — "novos" passam a
+              ser os leads criados em hoje-1. None = janela atual (últimas 24h).
 
     Returns dict com:
         - novos_periodo: int — leads criados no período
@@ -166,6 +169,9 @@ def get_leads_pipeline(data_inicio: Optional[date] = None,
     if data_inicio and data_fim:
         inicio_str = str(data_inicio)
         fim_str = str(data_fim)
+    elif hoje is not None:
+        # Relatório retroativo: "novos" = criados no dia anterior à data de referência
+        inicio_str = fim_str = str(hoje - timedelta(days=1))
     else:
         inicio_str = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%d")
         fim_str = str(date.today())
@@ -240,11 +246,15 @@ def get_leads_pipeline(data_inicio: Optional[date] = None,
     }
 
 
-def collect_all() -> dict[str, Any]:
-    """Coleta diária — pipeline atual + novos nas últimas 24h."""
+def collect_all(hoje: Optional[date] = None) -> dict[str, Any]:
+    """Coleta diária — pipeline atual + novos nas últimas 24h.
+
+    Sem `hoje` o comportamento é o atual (briefing das 8h); com `hoje`
+    (relatório retroativo) os "novos" são filtrados por dateadded == hoje-1.
+    """
     result: dict[str, Any] = {}
     try:
-        result["leads"] = get_leads_pipeline()
+        result["leads"] = get_leads_pipeline(hoje=hoje)
     except Exception as exc:
         logger.error("Perfex CRM collector falhou: %s", exc, exc_info=True)
         result["leads"] = None

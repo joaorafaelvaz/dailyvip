@@ -59,12 +59,12 @@ def _query(sql: str, args=None) -> list[dict]:
 
 # ── Meta automática: média dos últimos 3 meses ──────────────────────────────
 
-def get_media_historica() -> dict[int, float]:
+def get_media_historica(hoje: Optional[date] = None) -> dict[int, float]:
     """
     Calcula a média mensal de faturamento dos últimos 3 meses completos
     por unidade. Usado como meta quando não há meta manual definida.
     """
-    hoje = date.today()
+    hoje = hoje or config.hoje_local()
     # Últimos 3 meses completos (exclui o mês atual)
     meses = []
     for i in range(1, 4):
@@ -118,7 +118,7 @@ def _resolve_meta(unidade_id: int, media_hist: dict[int, float]) -> Optional[flo
 
 # ── Collectors ───────────────────────────────────────────────────────────────
 
-def get_faturamento_ontem(media_hist: dict[int, float] = None) -> dict[str, Any]:
+def get_faturamento_ontem(media_hist: dict[int, float] = None, hoje: Optional[date] = None) -> dict[str, Any]:
     """
     Retorna faturamento do dia anterior por unidade.
     Meta = manual (se definida) ou média últimos 3 meses.
@@ -126,7 +126,8 @@ def get_faturamento_ontem(media_hist: dict[int, float] = None) -> dict[str, Any]
     if media_hist is None:
         media_hist = {}
 
-    ontem = date.today() - timedelta(days=1)
+    hoje = hoje or config.hoje_local()
+    ontem = hoje - timedelta(days=1)
     ontem_fim = ontem + timedelta(days=1)
     rows = _query(
         """
@@ -205,16 +206,21 @@ def get_faturamento_ontem(media_hist: dict[int, float] = None) -> dict[str, Any]
     }
 
 
-def get_meta_mensal(media_hist: dict[int, float] = None) -> dict:
-    """Retorna acumulado do mês corrente vs meta por unidade."""
+def get_meta_mensal(media_hist: dict[int, float] = None, hoje: Optional[date] = None) -> dict:
+    """Retorna acumulado do mês de referência (o de ontem) vs meta por unidade."""
     if media_hist is None:
         media_hist = {}
 
-    hoje = date.today()
-    mes_inicio = date(hoje.year, hoje.month, 1)
-    prox_mes = (hoje.month % 12) + 1
-    prox_ano = hoje.year + (1 if prox_mes == 1 else 0)
-    mes_fim = date(prox_ano, prox_mes, 1)
+    hoje = hoje or config.hoje_local()
+    # Mes de referencia = mes de "ontem", acumulado ate a data de referencia (exclusive).
+    # No dia 1 o briefing das 8h fecha o mes anterior; no on-demand mensal
+    # (hoje = dia 1 do mes seguinte) cobre o mes inteiro; em data retroativa
+    # nao inclui vendas posteriores a ela.
+    ref = hoje - timedelta(days=1)
+    mes_inicio = date(ref.year, ref.month, 1)
+    mes_fim = hoje
+    dias_corridos = ref.day
+    dias_mes = calendar.monthrange(ref.year, ref.month)[1]
 
     rows = _query(
         """
@@ -255,8 +261,6 @@ def get_meta_mensal(media_hist: dict[int, float] = None) -> dict:
     total_meta_rede = sum(r["meta_mensal"] for r in rows if r["meta_mensal"])
 
     # Dias corridos / dias no mês (para calcular % esperado)
-    dias_corridos = hoje.day
-    dias_mes = calendar.monthrange(hoje.year, hoje.month)[1]
     pct_mes_corrido = round(dias_corridos / dias_mes * 100, 1)
 
     return {
@@ -315,7 +319,7 @@ def _get_slots_disponiveis(dt: date) -> dict[int, int]:
     return {r["unidade_id"]: int(r["total_slots"] or 0) for r in rows}
 
 
-def get_agenda_ontem() -> dict[str, Any]:
+def get_agenda_ontem(hoje: Optional[date] = None) -> dict[str, Any]:
     """Retorna métricas de agenda do dia anterior por unidade.
 
     Ocupação = (registros na agenda) / (slots disponíveis da escala).
@@ -329,7 +333,8 @@ def get_agenda_ontem() -> dict[str, Any]:
     - ocupados: COUNT de todos os registros (inclui o caso checkin=1/checkout=0,
       cliente chegou mas não finalizou)
     """
-    ontem = date.today() - timedelta(days=1)
+    hoje = hoje or config.hoje_local()
+    ontem = hoje - timedelta(days=1)
     ontem_fim = ontem + timedelta(days=1)
 
     # 1. Total de slots disponíveis por unidade (escala dos barbeiros)
@@ -428,7 +433,7 @@ def get_agenda_ontem() -> dict[str, Any]:
     }
 
 
-def get_agenda_hoje() -> dict[str, Any]:
+def get_agenda_hoje(hoje: Optional[date] = None) -> dict[str, Any]:
     """Retorna ocupação da agenda de HOJE por unidade (prévia do dia).
 
     Como o dia ainda está em andamento, mostra:
@@ -436,7 +441,7 @@ def get_agenda_hoje() -> dict[str, Any]:
     - agendados: slots com algum registro (cliente ou fechamento)
     - ocupacao: agendados / total_slots
     """
-    hoje = date.today()
+    hoje = hoje or config.hoje_local()
     hoje_fim = hoje + timedelta(days=1)
     slots_por_unidade = _get_slots_disponiveis(hoje)
 
@@ -512,14 +517,15 @@ def get_agenda_hoje() -> dict[str, Any]:
     }
 
 
-def get_profissionais_ontem() -> list[dict]:
+def get_profissionais_ontem(hoje: Optional[date] = None) -> list[dict]:
     """Retorna resumo de cada profissional por unidade no dia anterior.
 
     Usa vendas_produtos.colaborador (barbeiro real) e produtos.tipo
     para separar serviços de produtos.
     Tipos: ser/lavavip/pac = serviço | probar/proemp/proins = produto.
     """
-    ontem = date.today() - timedelta(days=1)
+    hoje = hoje or config.hoje_local()
+    ontem = hoje - timedelta(days=1)
     ontem_fim = ontem + timedelta(days=1)
 
     # Query unificada: JOIN direto eliminando IN() com milhares de IDs
@@ -570,14 +576,15 @@ def get_profissionais_ontem() -> list[dict]:
     return list(rows)
 
 
-def get_clientes_sem_retorno(dias: int = 45) -> list[dict]:
+def get_clientes_sem_retorno(dias: int = 45, hoje: Optional[date] = None) -> list[dict]:
     """Retorna clientes novos que visitaram há `dias` dias e não retornaram.
 
     Usa apenas a tabela clientes (sem subquery em agendas):
     - ultima_visita na data-alvo → não voltou depois
     - data_criacao próxima da ultima_visita → cliente novo (primeira visita)
     """
-    data_alvo = date.today() - timedelta(days=dias)
+    hoje = hoje or config.hoje_local()
+    data_alvo = hoje - timedelta(days=dias)
     data_alvo_fim = data_alvo + timedelta(days=1)
     # Cliente novo: cadastrado até 7 dias antes da visita
     criacao_inicio = data_alvo - timedelta(days=7)
@@ -603,9 +610,9 @@ def get_clientes_sem_retorno(dias: int = 45) -> list[dict]:
     return list(rows)
 
 
-def get_barbeiros_ausentes() -> list[dict]:
+def get_barbeiros_ausentes(hoje: Optional[date] = None) -> list[dict]:
     """Retorna colaboradores que não abriram caixa hoje."""
-    hoje = date.today()
+    hoje = hoje or config.hoje_local()
     rows = _query(
         """
         SELECT
@@ -667,9 +674,9 @@ def get_royalties_inadimplentes() -> dict[str, list]:
     return {"royalties": royalties, "fundo_publicidade": fundo}
 
 
-def get_aniversarios_hoje() -> list[dict]:
+def get_aniversarios_hoje(hoje: Optional[date] = None) -> list[dict]:
     """Retorna aniversários de sócios e inaugurações de unidades para hoje."""
-    hoje = date.today()
+    hoje = hoje or config.hoje_local()
     rows = _query(
         """
         SELECT
@@ -974,20 +981,25 @@ def collect_range(
     data_inicio: date,
     data_fim: date,
     tipo: str = "semanal",
+    hoje: Optional[date] = None,
 ) -> dict[str, Any]:
     """Executa collectors para um período arbitrário [data_inicio, data_fim).
 
     tipo: 'semanal' ou 'mensal' — controla cálculo proporcional de meta.
+    hoje: data de referência (padrão: hoje no fuso do projeto) repassada a
+          get_media_historica, get_meta_mensal e get_aniversarios_hoje.
     Não inclui: clientes_sem_retorno, agenda_hoje.
     """
     import time as _time
+
+    hoje = hoje or config.hoje_local()
 
     result: dict[str, Any] = {}
 
     # Carrega médias históricas (fallback de meta)
     media_hist: dict[int, float] = {}
     try:
-        media_hist = get_media_historica()
+        media_hist = get_media_historica(hoje)
         logger.info(
             "Médias históricas carregadas: %d unidades (metas manuais: %d)",
             len(media_hist), len(MANUAL_METAS),
@@ -997,11 +1009,11 @@ def collect_range(
 
     collectors = {
         "faturamento": lambda: get_faturamento_range(data_inicio, data_fim, media_hist),
-        "meta_mensal": lambda: get_meta_mensal(media_hist),
+        "meta_mensal": lambda: get_meta_mensal(media_hist, hoje),
         "agenda": lambda: get_agenda_range(data_inicio, data_fim),
         "profissionais": lambda: get_profissionais_range(data_inicio, data_fim),
         "inadimplencia": get_royalties_inadimplentes,
-        "aniversarios": get_aniversarios_hoje,
+        "aniversarios": lambda: get_aniversarios_hoje(hoje),
     }
 
     for name, fn in collectors.items():
@@ -1022,14 +1034,16 @@ def collect_range(
     return result
 
 
-def collect_all() -> dict[str, Any]:
-    """Executa todas as queries e retorna dict consolidado. Falhas parciais são logadas."""
+def collect_all(hoje: Optional[date] = None) -> dict[str, Any]:
+    """Executa todas as queries para a data de referência `hoje` (padrão: hoje
+    no fuso do projeto) e retorna dict consolidado. Falhas parciais são logadas."""
+    hoje = hoje or config.hoje_local()
     result = {}
 
     # Carrega médias históricas primeiro (usado como fallback de meta)
     media_hist = {}
     try:
-        media_hist = get_media_historica()
+        media_hist = get_media_historica(hoje)
         logger.info(
             "Médias históricas carregadas: %d unidades (metas manuais: %d)",
             len(media_hist), len(MANUAL_METAS),
@@ -1038,14 +1052,14 @@ def collect_all() -> dict[str, Any]:
         logger.error("Falha ao carregar médias históricas: %s", exc, exc_info=True)
 
     collectors = {
-        "faturamento": lambda: get_faturamento_ontem(media_hist),
-        "meta_mensal": lambda: get_meta_mensal(media_hist),
-        "agenda": get_agenda_ontem,
-        "agenda_hoje": get_agenda_hoje,
-        "profissionais": get_profissionais_ontem,
-        "clientes_sem_retorno": get_clientes_sem_retorno,
+        "faturamento": lambda: get_faturamento_ontem(media_hist, hoje),
+        "meta_mensal": lambda: get_meta_mensal(media_hist, hoje),
+        "agenda": lambda: get_agenda_ontem(hoje),
+        "agenda_hoje": lambda: get_agenda_hoje(hoje),
+        "profissionais": lambda: get_profissionais_ontem(hoje),
+        "clientes_sem_retorno": lambda: get_clientes_sem_retorno(hoje=hoje),
         "inadimplencia": get_royalties_inadimplentes,
-        "aniversarios": get_aniversarios_hoje,
+        "aniversarios": lambda: get_aniversarios_hoje(hoje),
     }
 
     import time as _time

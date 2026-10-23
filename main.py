@@ -18,7 +18,6 @@ import argparse
 import logging
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from logging.handlers import RotatingFileHandler
 
@@ -26,6 +25,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 import config
+from briefing_core import collect_all_data
 from collectors import erp_mysql, perfex_crm, satisfycam, google_reviews, meta_ads
 from composers import (
     whatsapp_message, html_dashboard, whatsapp_unit_message,
@@ -78,55 +78,6 @@ def _remove_file_handler(fh):
     if fh:
         logging.getLogger().removeHandler(fh)
         fh.close()
-
-
-# ── Coleta de dados ──────────────────────────────────────────────────────────
-
-def _collect_erp() -> dict:
-    logger.info("Coletando dados do ERP MySQL...")
-    return erp_mysql.collect_all()
-
-
-def _collect_perfex() -> dict:
-    logger.info("Coletando dados do Perfex CRM...")
-    return perfex_crm.collect_all()
-
-
-def _collect_satisfycam() -> dict:
-    logger.info("Coletando dados do SatisfyCAM...")
-    return satisfycam.collect_all()
-
-
-def _collect_google() -> dict:
-    logger.info("Coletando dados do Google Reviews...")
-    return google_reviews.collect_all()
-
-
-def collect_all_data() -> dict:
-    """Executa todos os collectors em paralelo e consolida o resultado."""
-    tasks = {
-        "erp": _collect_erp,
-        "perfex": _collect_perfex,
-        "satisfycam": _collect_satisfycam,
-        "google": _collect_google,
-    }
-
-    results = {}
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {pool.submit(fn): name for name, fn in tasks.items()}
-        for future in as_completed(futures):
-            name = futures[future]
-            try:
-                results[name] = future.result()
-            except Exception as exc:
-                logger.error("Collector '%s' lançou exceção: %s", name, exc, exc_info=True)
-                results[name] = {}
-
-    # Achata os dados do ERP no nível raiz para o composer
-    erp = results.pop("erp", {})
-    data = {**erp, **results}
-
-    return data
 
 
 # ── Dry-run por unidade ──────────────────────────────────────────────────────
