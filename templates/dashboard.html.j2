@@ -28,7 +28,7 @@
         <p class="text-gray-300 text-sm mt-1">{{ subtitulo }}</p>
       </div>
       <div class="text-right text-sm text-gray-400">
-        Gerado às {{ hoje.strftime('%H:%M') if hoje else '08:00' }}<br>
+        Gerado às {{ gerado_em.strftime('%H:%M') }}<br>
         51+ unidades monitoradas
       </div>
     </div>
@@ -253,7 +253,7 @@
             </div>
             <div class="text-center">
               <p class="text-3xl font-bold text-gray-700">{{ perfex.total_pipeline }}</p>
-              <p class="text-xs text-gray-500">total no pipeline</p>
+              <p class="text-xs text-gray-500">{{ 'situação atual (snapshot de hoje)' if data.get('retroativo') else 'total no pipeline' }}</p>
             </div>
           </div>
           {% if perfex.funil %}
@@ -276,6 +276,9 @@
 
     <!-- ── Google Reviews ── -->
     {% set reviews = data.get('google', {}).get('reviews') %}
+    {% if data.get('retroativo') %}
+    <div class="bg-white rounded-2xl shadow p-5 mb-4 text-sm text-gray-400 italic">⭐ Google Reviews e SatisfyCAM: indisponíveis para datas retroativas</div>
+    {% endif %}
     {% if reviews and reviews.total > 0 %}
     <div class="bg-white rounded-2xl shadow p-5 mb-4">
       <h2 class="text-lg font-bold mb-4">⭐ Google Reviews — Novas 24h</h2>
@@ -528,7 +531,7 @@
   </main>
 
   <footer class="bg-gray-800 text-gray-400 text-xs text-center py-4">
-    Barbearia VIP — Daily Briefing Automático | Gerado em {{ hoje.strftime('%d/%m/%Y às %H:%M') }}
+    Barbearia VIP — Daily Briefing Automático | Gerado em {{ gerado_em.strftime('%d/%m/%Y às %H:%M') }}
   </footer>
 
 </body>

@@ -2,8 +2,8 @@
 
 import logging
 import os
-from datetime import date, datetime
-from typing import Any
+from datetime import date
+from typing import Any, Optional
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -20,7 +20,13 @@ _MESES = {
 }
 
 
-def generate(data: dict[str, Any], data_inicio: date, data_fim: date, tipo: str = "semanal") -> str:
+def generate(
+    data: dict[str, Any],
+    data_inicio: date,
+    data_fim: date,
+    tipo: str = "semanal",
+    hoje: Optional[date] = None,
+) -> str:
     """
     Renderiza o template HTML do dashboard periódico e salva em output/.
 
@@ -29,10 +35,13 @@ def generate(data: dict[str, Any], data_inicio: date, data_fim: date, tipo: str 
         data_inicio: data de início do período.
         data_fim: data de fim do período.
         tipo: 'semanal' ou 'mensal'.
+        hoje: data de referência (padrão: hoje no fuso do projeto). A hora real
+              de geração vai em `gerado_em`.
 
     Returns:
         Caminho completo do arquivo gerado.
     """
+    hoje = hoje or config.hoje_local()
     env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), autoescape=True)
     env.filters["brl"] = _fmt_brl
     env.filters["pct"] = _fmt_pct
@@ -50,7 +59,8 @@ def generate(data: dict[str, Any], data_inicio: date, data_fim: date, tipo: str 
     template = env.get_template("dashboard.html.j2")
     html = template.render(
         data=data,
-        hoje=datetime.now(),  # datetime (não date) para "Gerado às HH:MM" sair com a hora real
+        hoje=hoje,
+        gerado_em=config.agora_local(),
         periodo_tipo=tipo,
         periodo_label=periodo_label,
         data_inicio=data_inicio,
