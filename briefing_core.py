@@ -15,24 +15,47 @@ from collectors import erp_mysql, google_reviews, perfex_crm, satisfycam
 logger = logging.getLogger("briefing")
 
 
+# ── Coleta de dados ──────────────────────────────────────────────────────────
+
+def _collect_erp(hoje: date) -> dict:
+    logger.info("Coletando dados do ERP MySQL...")
+    return erp_mysql.collect_all(hoje)
+
+
+def _collect_perfex(hoje: Optional[date]) -> dict:
+    logger.info("Coletando dados do Perfex CRM...")
+    return perfex_crm.collect_all(hoje)
+
+
+def _collect_satisfycam(hoje: date) -> dict:
+    logger.info("Coletando dados do SatisfyCAM...")
+    return satisfycam.collect_all(hoje)
+
+
+def _collect_google() -> dict:
+    logger.info("Coletando dados do Google Reviews...")
+    return google_reviews.collect_all()
+
+
 def collect_all_data(hoje: Optional[date] = None) -> dict:
     """Executa todos os collectors em paralelo para a data de referência `hoje`
     (padrão: hoje no fuso do projeto). 'Ontem' nos relatórios é `hoje - 1`.
 
-    Google Reviews não tem histórico: em data retroativa é pulado.
+    Google Reviews e SatisfyCAM não têm histórico: em data retroativa são pulados.
     """
-    hoje = hoje or config.hoje_local()
-    retroativo = hoje != config.hoje_local()
+    atual = config.hoje_local()
+    hoje = hoje or atual
+    retroativo = hoje != atual
 
     tasks = {
-        "erp": lambda: erp_mysql.collect_all(hoje),
-        # Sem data (None) o Perfex mantem a janela atual "ultimas 24h"; so em
-        # relatorio retroativo filtra pelo dia hoje-1 (spec §3).
-        "perfex": lambda: perfex_crm.collect_all(hoje if retroativo else None),
+        "erp": lambda: _collect_erp(hoje),
+        # Sem data (None) o Perfex mantém a janela atual "últimas 24h"; só em
+        # relatório retroativo filtra pelo dia hoje-1 (spec §3).
+        "perfex": lambda: _collect_perfex(hoje if retroativo else None),
     }
     if not retroativo:
-        tasks["satisfycam"] = lambda: satisfycam.collect_all(hoje)
-        tasks["google"] = google_reviews.collect_all
+        tasks["satisfycam"] = lambda: _collect_satisfycam(hoje)
+        tasks["google"] = _collect_google
 
     results: dict = {}
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -49,7 +72,8 @@ def collect_all_data(hoje: Optional[date] = None) -> dict:
         results["google"] = {"reviews": None, "retroativo": True}
         results["satisfycam"] = {"relatorio": None, "retroativo": True}
 
+    # Achata os dados do ERP no nível raiz para o composer
     erp = results.pop("erp", {}) or {}
     data = {**erp, **results}
-    data["retroativo"] = retroativo      # o template usa para rotular "situacao atual"/"indisponivel"
+    data["retroativo"] = retroativo      # o template usa para rotular "situação atual"/"indisponível"
     return data

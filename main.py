@@ -26,7 +26,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 import config
 from briefing_core import collect_all_data
-from collectors import erp_mysql, perfex_crm, satisfycam, google_reviews, meta_ads
+from collectors import erp_mysql, perfex_crm, meta_ads
 from composers import (
     whatsapp_message, html_dashboard, whatsapp_unit_message,
     whatsapp_weekly_message, whatsapp_monthly_message,

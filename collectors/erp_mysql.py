@@ -65,11 +65,14 @@ def get_media_historica(hoje: Optional[date] = None) -> dict[int, float]:
     por unidade. Usado como meta quando não há meta manual definida.
     """
     hoje = hoje or config.hoje_local()
-    # Últimos 3 meses completos (exclui o mês atual)
+    # Mês de referência = mês de "ontem", espelhando get_meta_mensal: no dia 1
+    # a meta reportada é a do mês recém-fechado, e ele NÃO pode entrar na
+    # própria média. Os 3 meses completos são os anteriores ao mês de `ref`.
+    ref = hoje - timedelta(days=1)
     meses = []
     for i in range(1, 4):
-        ano = hoje.year
-        mes = hoje.month - i
+        ano = ref.year
+        mes = ref.month - i
         while mes <= 0:
             mes += 12
             ano -= 1
@@ -78,10 +81,10 @@ def get_media_historica(hoje: Optional[date] = None) -> dict[int, float]:
     if not meses:
         return {}
 
-    # Range: primeiro dia do mês mais antigo até primeiro dia do mês atual
+    # Range: primeiro dia do mês mais antigo até primeiro dia do mês de referência
     ano_ini, mes_ini = meses[-1]  # mês mais antigo
     data_inicio = date(ano_ini, mes_ini, 1)
-    data_fim = date(hoje.year, hoje.month, 1)  # primeiro dia do mês atual
+    data_fim = date(ref.year, ref.month, 1)  # primeiro dia do mês de referência
     n_meses = len(meses)
 
     rows = _query(

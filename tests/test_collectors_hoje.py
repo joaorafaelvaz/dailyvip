@@ -58,3 +58,15 @@ def test_satisfycam_e_perfex_aceitam_hoje(monkeypatch):
     ])
     r = perfex_crm.get_leads_pipeline(hoje=date(2026, 10, 20))
     assert r["novos_periodo"] == 1   # so o dia 19 (hoje-1)
+
+
+def test_media_historica_usa_mes_de_ontem_como_referencia(monkeypatch):
+    from collectors import erp_mysql
+    c = _captura(monkeypatch, erp_mysql)
+    # Dia 1: o mes recem-fechado (outubro) NAO entra na propria media -> jul, ago, set
+    erp_mysql.get_media_historica(hoje=date(2026, 11, 1))
+    assert c[0][1] == (date(2026, 7, 1), date(2026, 10, 1))
+    c.clear()
+    # Meio do mes: 3 meses completos antes do mes de ontem (outubro) -> jul, ago, set
+    erp_mysql.get_media_historica(hoje=date(2026, 10, 20))
+    assert c[0][1] == (date(2026, 7, 1), date(2026, 10, 1))

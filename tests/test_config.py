@@ -13,6 +13,8 @@ def test_hoje_local_usa_timezone_configurado(monkeypatch):
     assert config.hoje_local() == date(2026, 10, 23)
 
 
-def test_data_dir_existe():
+def test_data_dir_do_projeto_e_criado_na_importacao():
     import config, os
-    assert os.path.isdir(config.DATA_DIR)
+    # O conftest aponta config.DATA_DIR para um tmp; aqui verificamos o data/ real,
+    # criado pelo os.makedirs executado na importacao de config.
+    assert os.path.isdir(os.path.join(os.path.dirname(config.__file__), "data"))
