@@ -1052,7 +1052,7 @@ table{width:100%;border-collapse:collapse;font-size:.95em}td,th{padding:6px;bord
 
 - [ ] **Step 5: Rodar — deve passar** → `5 passed`.
 
-- [ ] **Step 6: Subir localmente** — `.venv/Scripts/python -c "from admin.app import app; app.run(port=8081)"` e abrir `http://127.0.0.1:8081/admin/relatorios`. Expected: página renderiza; gerar sem `.env` local mostra "Erro ao gerar" (não um 500).
+- [ ] **Step 6: Subir localmente** — `ADMIN_INSECURE_COOKIE=1` no ambiente (sem isso o cookie de sessão/CSRF não é enviado em HTTP puro e todo POST dá 400; no Windows use `set ADMIN_INSECURE_COOKIE=1` / `.venv/Scripts/python -c "..."`). `.venv/Scripts/python -c "from admin.app import app; app.run(port=18081)"` (a porta 8081 é reservada no Windows) e abrir `http://127.0.0.1:18081/admin/relatorios`. Expected: página renderiza; gerar sem `.env` local mostra "Erro ao gerar" (não um 500).
 
 - [ ] **Step 7: Commit** — `git add admin/ tests/test_app.py && git commit -m "feat(admin): app Flask sob /admin com tela de relatorios por data"`
 
@@ -2187,7 +2187,7 @@ No passo do systemd: copie também `daily-admin.service`; `systemctl enable dail
 
 - [ ] **Step 5: Validar** — `bash -n deploy/deploy.sh && bash -n deploy/setup.sh && echo OK` → `OK`.
 
-- [ ] **Step 6: README** — seção "Área administrativa (/admin)": o que é, variáveis novas do `.env`, o passo manual único do `include`, logs (`tail -f admin.log` para o app; `journalctl -u daily-admin -f` para o gunicorn), e que `data/agendamentos.db` é o único arquivo a incluir em backup.
+- [ ] **Step 6: README** — seção "Área administrativa (/admin)": o que é, variáveis novas do `.env`, o passo manual único do `include`, logs (`tail -f admin.log` para o app; `journalctl -u daily-admin -f` para o gunicorn), e que `data/agendamentos.db` é o único arquivo a incluir em backup. Documentar também `ADMIN_INSECURE_COOKIE=1` **somente para rodar localmente em HTTP** (nunca no `.env` de produção — o `daily-admin.service` não deve definir essa variável) e `ADMIN_NO_FILE_LOG` (usado pelos testes).
 
 - [ ] **Step 7: Commit** — `git add deploy/ README.md && git commit -m "feat(deploy): servico daily-admin, snippet nginx /admin, deploy.sh e setup.sh atualizados"`
 
