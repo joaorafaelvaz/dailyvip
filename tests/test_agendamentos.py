@@ -33,3 +33,12 @@ def test_mensal_dia_31_e_ultimo():
 def test_fim_encerra():
     from admin.agendamentos import proxima_ocorrencia as px
     assert px(dt(2026,10,25,15,0), dt(2026,10,25,15,0), {"tipo":"diaria"}, dt(2026,10,25,23,59)) is None
+
+
+def test_apos_arbitrario_no_mesmo_dia():
+    """`apos` antes do horário do dia: a ocorrência é hoje mesmo, não amanhã."""
+    from admin.agendamentos import proxima_ocorrencia as px
+    assert px(dt(2026,10,25,10,0), dt(2026,10,25,15,0), {"tipo":"diaria"}, None) == dt(2026,10,25,15,0)
+    assert px(dt(2026,10,27,10,0), dt(2026,10,25,15,0), {"tipo":"diaria"}, None) == dt(2026,10,27,15,0)
+    # `apos` anterior ao primeiro envio nunca antecipa o primeiro
+    assert px(dt(2026,10,20,10,0), dt(2026,10,25,15,0), {"tipo":"diaria"}, None) == dt(2026,10,25,15,0)

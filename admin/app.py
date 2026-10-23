@@ -8,7 +8,7 @@ import secrets
 from datetime import date, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
-from flask import (Blueprint, Flask, abort, flash, jsonify, redirect,
+from flask import (Blueprint, Flask, abort, flash, g, jsonify, redirect,
                    render_template, request, session, url_for)
 
 import config
@@ -88,20 +88,31 @@ def relatorios_gerar():
 # ── Mensagens agendadas ───────────────────────────────────────────────────────
 
 def _db():
-    con = ag.conectar()
-    ag.criar_schema(con)
-    return con
+    """Uma conexão por requisição (fechada em `_fechar_db`). O schema é criado em `create_app()`."""
+    if "db" not in g:
+        g.db = ag.conectar()
+    return g.db
 
 
-def _parse_form(f):
-    """Valida o formulário (spec §5 'Validação'); retorna (campos, erros)."""
+def _fechar_db(_exc):
+    con = g.pop("db", None)
+    if con is not None:
+        con.close()
+
+
+def _parse_form(f, original=None):
+    """Valida o formulário (spec §5 'Validação'); retorna (campos, erros).
+
+    `original` (agendamento em edição): mantém-se a data/hora do primeiro envio mesmo
+    que já tenha passado (recorrência em curso) — só uma data NOVA precisa estar no futuro."""
     erros = []
     texto = (f.get("texto") or "").strip()
     if not 1 <= len(texto) <= 4000:
         erros.append("O texto deve ter entre 1 e 4000 caracteres.")
     unidades = [int(u) for u in f.getlist("unidades") if str(u) in (config.UNIT_GROUPS or {})]
     destinos = {"unidades": unidades, "todas": f.get("todas") == "1", "franqueadora": f.get("franqueadora") == "1"}
-    if not (unidades or destinos["todas"] or destinos["franqueadora"]):
+    # Resolve de verdade: "todas" sem unit_groups ou "franqueadora" sem WAHA_RECIPIENTS não valem
+    if not ag.resolver_destinos(destinos):
         erros.append("Escolha ao menos um destino.")
     primeiro = None
     try:
@@ -109,7 +120,8 @@ def _parse_form(f):
                                     datetime.strptime(f.get("hora", ""), "%H:%M").time(), tzinfo=ag.TZ)
     except ValueError:
         erros.append("Data/hora inválida.")
-    if primeiro and primeiro < config.agora_local() + timedelta(minutes=1):
+    mantem_data = original is not None and primeiro is not None and primeiro == original["primeiro_envio"]
+    if primeiro and not mantem_data and primeiro < config.agora_local() + timedelta(minutes=1):
         erros.append("A data/hora do primeiro envio precisa estar no futuro.")
     tipo = f.get("recorrencia", "nenhuma")
     rec = {"tipo": tipo}
@@ -170,8 +182,10 @@ def mensagens_page():
             for e in erros:
                 flash(e, "erro")
         else:
-            ag.criar(con, campos["texto"], campos["destinos"], campos["primeiro"], campos["rec"], campos["fim"])
-            flash("Mensagem agendada.", "ok")
+            aid = ag.criar(con, campos["texto"], campos["destinos"], campos["primeiro"], campos["rec"], campos["fim"])
+            prox = ag.obter(con, aid)["proximo_envio"]
+            # Mostra a data calculada: no semanal/mensal ela pode cair depois da data escolhida
+            flash(f"Mensagem agendada — primeiro envio em {prox:%d/%m/%Y %H:%M}." if prox else "Mensagem agendada.", "ok")
             return redirect(url_for("admin.mensagens_page"))
     return _render_mensagens(con)
 
@@ -182,14 +196,18 @@ def mensagens_editar(aid):
     a = ag.obter(con, aid)
     if not a or a["estado"] in ("cancelado", "concluido"):
         abort(404)
+    if a["estado"] == "enviando":
+        abort(409, "Agendamento em envio neste momento — tente de novo em instantes.")
     if request.method == "POST":
-        campos, erros = _parse_form(request.form)
+        campos, erros = _parse_form(request.form, original=a)
         if erros:
             for e in erros:
                 flash(e, "erro")
-        else:
-            ag.atualizar(con, aid, campos["texto"], campos["destinos"], campos["primeiro"], campos["rec"], campos["fim"])
+        elif ag.atualizar(con, aid, campos["texto"], campos["destinos"], campos["primeiro"], campos["rec"], campos["fim"]):
             flash("Agendamento atualizado.", "ok")
+            return redirect(url_for("admin.mensagens_page"))
+        else:
+            flash("O agendamento mudou de estado enquanto você editava; nada foi salvo.", "erro")
             return redirect(url_for("admin.mensagens_page"))
     return _render_mensagens(con, editando=a)
 
@@ -197,13 +215,16 @@ def mensagens_editar(aid):
 @bp.route("/mensagens/<int:aid>/estado", methods=["POST"])
 def mensagens_estado(aid):
     estado = request.form.get("estado")
-    if estado not in ("ativo", "pausado", "cancelado"):
+    if estado not in ag.TRANSICOES:
         abort(400)
     con = _db()
-    if not ag.obter(con, aid):
+    a = ag.obter(con, aid)
+    if not a:
         abort(404)
-    ag.mudar_estado(con, aid, estado)
-    flash("Estado atualizado.", "ok")
+    if ag.mudar_estado(con, aid, estado):
+        flash("Estado atualizado.", "ok")
+    else:
+        flash(f"Não foi possível mudar para '{estado}': o agendamento está '{a['estado']}'.", "erro")
     return redirect(url_for("admin.mensagens_page"))
 
 
@@ -267,7 +288,14 @@ def create_app() -> Flask:
     # libera HTTP puro (testes, app.run local).
     app.config["SESSION_COOKIE_SECURE"] = os.environ.get("ADMIN_INSECURE_COOKIE") != "1"
     app.register_blueprint(bp)
+    app.teardown_appcontext(_fechar_db)
     _setup_logging(app)
+    # Schema do SQLite uma vez por processo, não a cada requisição
+    con = ag.conectar()
+    try:
+        ag.criar_schema(con)
+    finally:
+        con.close()
     return app
 
 

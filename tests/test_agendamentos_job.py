@@ -71,3 +71,40 @@ def test_retentativa_nao_reenvia_a_quem_ja_recebeu(monkeypatch):
     job.processar_agendamentos(agora=T0 + timedelta(minutes=2))     # só b
     assert env == ["a@g.us", "b@g.us", "b@g.us"]
     assert ag.obter(db, aid)["estado"] == "concluido"
+
+
+def test_sem_destinos_registra_e_pausa(monkeypatch):
+    env = []; db, ag, job = _setup(monkeypatch, env)
+    aid = ag.criar(db, "oi", {"unidades":[99],"todas":False,"franqueadora":False}, T0, {"tipo":"diaria"}, None)
+    job.processar_agendamentos(agora=T0 + timedelta(minutes=1))
+    a = ag.obter(db, aid)
+    assert env == [] and a["estado"] == "pausado" and a["proximo_envio"] == T0
+    h = ag.historico(db)
+    assert [(x["status"], x["chat_id"], x["destino_nome"]) for x in h] == [("pausado", "-", "sistema")]
+    assert "sem destinos" in h[0]["erro"]
+
+
+def test_sleep_so_entre_envios(monkeypatch):
+    env = []; db, ag, job = _setup(monkeypatch, env)
+    dorme = []
+    monkeypatch.setattr(job.time, "sleep", lambda s: dorme.append(s))
+    ag.criar(db, "oi", {"unidades":[61,63],"todas":False,"franqueadora":False}, T0, {"tipo":"nenhuma"}, None)
+    job.processar_agendamentos(agora=T0 + timedelta(minutes=1))
+    assert env == ["a@g.us", "b@g.us"] and dorme == [job.INTERVALO_ENVIO_S]
+
+
+def test_excecao_ao_fechar_ciclo_nao_derruba_o_ciclo(monkeypatch):
+    env = []; db, ag, job = _setup(monkeypatch, env)
+    a1 = ag.criar(db, "oi", {"unidades":[61],"todas":False,"franqueadora":False}, T0, {"tipo":"nenhuma"}, None)
+    a2 = ag.criar(db, "oi", {"unidades":[63],"todas":False,"franqueadora":False}, T0, {"tipo":"nenhuma"}, None)
+    def send(chat, text):
+        if chat == "a@g.us": raise ConnectionError("queda")
+        env.append(chat); return True
+    monkeypatch.setattr(job.waha, "send_text", send)
+    original = ag.concluir_ciclo
+    def concluir(con, aid, proximo, sucesso, **kw):
+        if aid == a1: raise RuntimeError("banco indisponível")
+        return original(con, aid, proximo, sucesso, **kw)
+    monkeypatch.setattr(ag, "concluir_ciclo", concluir)
+    assert job.processar_agendamentos(agora=T0 + timedelta(minutes=1)) == 2
+    assert env == ["b@g.us"] and ag.obter(db, a2)["estado"] == "concluido"

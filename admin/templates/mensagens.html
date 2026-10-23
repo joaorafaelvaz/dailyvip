@@ -16,7 +16,7 @@
     <label><input type="checkbox" name="franqueadora" value="1" {% if v.franqueadora %}checked{% endif %}> Franqueadora</label>
     <div class="grid">{% for uid, nome in unidades %}<label><input type="checkbox" name="unidades" value="{{ uid }}" {% if uid|string in v.unidades %}checked{% endif %}> {{ nome }}</label>{% endfor %}</div>
   </fieldset>
-  <label>Primeiro envio <input type="date" name="data" required value="{{ v.data }}" min="{{ hoje.isoformat() }}"> <input type="time" name="hora" required value="{{ v.hora }}"></label>
+  <label>Primeiro envio <input type="date" name="data" required value="{{ v.data }}" {% if not editando %}min="{{ hoje.isoformat() }}"{% endif %}> <input type="time" name="hora" required value="{{ v.hora }}"></label>
   <label>Repetição <select name="recorrencia" id="rec">{% for val, nome in [('nenhuma','Nenhuma'),('diaria','Diária'),('semanal','Semanal'),('mensal','Mensal')] %}<option value="{{ val }}" {% if v.recorrencia == val %}selected{% endif %}>{{ nome }}</option>{% endfor %}</select></label>
   <div id="semanal" {% if v.recorrencia != 'semanal' %}hidden{% endif %}>{% for i, n in [(0,'Seg'),(1,'Ter'),(2,'Qua'),(3,'Qui'),(4,'Sex'),(5,'Sáb'),(6,'Dom')] %}<label style="display:inline-block;margin-right:10px"><input type="checkbox" name="dias" value="{{ i }}" {% if i|string in v.dias %}checked{% endif %}> {{ n }}</label>{% endfor %}</div>
   <div id="mensal" {% if v.recorrencia != 'mensal' %}hidden{% endif %}><label>Dia do mês <input name="dia_mes" value="{{ v.dia_mes }}" size="6"> (ou <code>ultimo</code>)</label></div>

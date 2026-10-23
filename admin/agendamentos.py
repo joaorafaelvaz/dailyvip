@@ -26,11 +26,12 @@ def proxima_ocorrencia(apos: Optional[datetime], primeiro: datetime, rec: dict,
     if tipo == "nenhuma":
         cand = primeiro if (apos is None or primeiro > apos) else None
     else:
-        # candidato inicial: o dia de `primeiro` (se apos is None) ou o dia seguinte a `apos`
+        # candidato inicial: o dia de `primeiro` (se apos is None) ou o próprio dia de `apos`
+        # no horário de `primeiro` — se esse horário já passou, o dia seguinte
         if apos is None:
             d = _no_horario(primeiro, primeiro)
         else:
-            d = _no_horario(apos, primeiro) + timedelta(days=1)
+            d = _no_horario(apos, primeiro)
             if d <= apos:
                 d += timedelta(days=1)
         if d < primeiro:                     # `apos` anterior ao primeiro envio
@@ -151,13 +152,25 @@ def criar(con, texto, destinos, primeiro, rec, fim) -> int:
     return cur.lastrowid
 
 
-def atualizar(con, aid, texto, destinos, primeiro, rec, fim) -> None:
-    prox = proxima_ocorrencia(None, primeiro, rec, fim)
-    con.execute(
+def atualizar(con, aid, texto, destinos, primeiro, rec, fim) -> int:
+    """Edita um agendamento 'ativo' ou 'pausado' (pausado continua pausado). Retorna linhas afetadas.
+
+    Com `primeiro` no passado (edição de uma recorrência já em curso) a próxima
+    ocorrência é recalculada a partir de agora, não de `primeiro`."""
+    a = obter(con, aid)
+    if not a or a["estado"] not in ("ativo", "pausado"):
+        return 0
+    agora = config.agora_local()
+    prox = proxima_ocorrencia(agora if primeiro < agora else None, primeiro, rec, fim)
+    if prox is None and rec.get("tipo") == "nenhuma" and a["proximo_envio"] == primeiro:
+        prox = primeiro          # envio único atrasado e ainda pendente: não o perde
+    estado = "concluido" if prox is None else a["estado"]
+    return con.execute(
         "UPDATE agendamentos SET texto=?,destinos_json=?,primeiro_envio_iso=?,recorrencia_json=?,fim_iso=?,"
-        "proximo_envio_iso=?,estado=?,falhas_consecutivas=0,atualizado_em=? WHERE id=?",
+        "proximo_envio_iso=?,estado=?,falhas_consecutivas=0,atualizado_em=? "
+        "WHERE id=? AND estado IN ('ativo','pausado')",
         (texto, json.dumps(destinos), _iso(primeiro), json.dumps(rec), _iso(fim), _iso(prox),
-         "ativo" if prox else "concluido", _iso(config.agora_local()), aid))
+         estado, _iso(agora), aid)).rowcount
 
 
 def obter(con, aid) -> Optional[dict]:
@@ -171,12 +184,22 @@ def listar(con, estados=("ativo", "pausado", "enviando")) -> list[dict]:
         f"SELECT * FROM agendamentos WHERE estado IN ({q}) ORDER BY proximo_envio_iso", estados)]
 
 
-def mudar_estado(con, aid, estado) -> None:
-    assert estado in ESTADOS
+# Transições permitidas pela tela: destino -> estados de origem aceitos
+TRANSICOES = {"ativo": ("pausado",), "pausado": ("ativo",), "cancelado": ("ativo", "pausado")}
+
+
+def mudar_estado(con, aid, estado) -> int:
+    """Aplica uma transição da tela (retomar/pausar/cancelar). Retorna 1 se mudou, 0 se o
+    estado atual não permite (ex.: reativar um cancelado, pausar um 'enviando')."""
+    if estado not in TRANSICOES:
+        raise ValueError(f"transição inválida: {estado}")
+    origens = TRANSICOES[estado]
     # Retomar zera o contador: senão um agendamento pausado por 3 falhas pausa de novo na 1ª falha
     extra = ", falhas_consecutivas=0" if estado == "ativo" else ""
-    con.execute(f"UPDATE agendamentos SET estado=?{extra}, atualizado_em=? WHERE id=?",
-                (estado, _iso(config.agora_local()), aid))
+    q = ",".join("?" * len(origens))
+    return con.execute(
+        f"UPDATE agendamentos SET estado=?{extra}, atualizado_em=? WHERE id=? AND estado IN ({q})",
+        (estado, _iso(config.agora_local()), aid, *origens)).rowcount
 
 
 def reservar_vencidos(con, agora: datetime) -> list[dict]:
@@ -205,22 +228,27 @@ def recuperar_presos(con, agora: datetime, minutos: int = 10) -> int:
         "AND (reservado_em_iso IS NULL OR reservado_em_iso<=?)", (limite,)).rowcount
 
 
-def concluir_ciclo(con, aid, proximo: Optional[datetime], sucesso: bool) -> None:
+def concluir_ciclo(con, aid, proximo: Optional[datetime], sucesso: bool,
+                   pausar: bool = False, motivo: Optional[str] = None) -> int:
+    """Fecha o ciclo de envio de um agendamento reservado ('enviando').
+
+    `pausar=True` pausa já nesta falha (ex.: sem destinos válidos) em vez de esperar 3.
+    Retorna 1 se a linha ainda estava 'enviando' (um cancelar clicado durante o envio prevalece)."""
     a = obter(con, aid)
     if sucesso:
         falhas, estado = 0, ("ativo" if proximo else "concluido")
     else:
         falhas = a["falhas_consecutivas"] + 1
-        estado = "pausado" if falhas >= 3 else "ativo"
+        estado = "pausado" if (falhas >= 3 or pausar) else "ativo"
         proximo = a["proximo_envio"]            # não avança
-    if not sucesso and estado == "pausado":
-        registrar_envio(con, aid, a["proximo_envio"], "-", "sistema", "pausado",
-                        "pausado automaticamente apos 3 falhas consecutivas")
-    # Só atualiza se ainda está 'enviando': um cancelar/pausar clicado durante o envio prevalece
-    con.execute(
+    n = con.execute(
         "UPDATE agendamentos SET estado=?, proximo_envio_iso=?, falhas_consecutivas=?, reservado_em_iso=NULL, "
         "atualizado_em=? WHERE id=? AND estado='enviando'",
-        (estado, _iso(proximo), falhas, _iso(config.agora_local()), aid))
+        (estado, _iso(proximo), falhas, _iso(config.agora_local()), aid)).rowcount
+    if n and not sucesso and estado == "pausado":
+        registrar_envio(con, aid, a["proximo_envio"], "-", "sistema", "pausado",
+                        motivo or "pausado automaticamente apos 3 falhas consecutivas")
+    return n
 
 
 def registrar_envio(con, aid, ocorrencia: datetime, chat_id, nome, status, erro=None) -> None:

@@ -55,26 +55,38 @@ def _processar_um(con, a: dict, agora: datetime) -> None:
             ag.concluir_ciclo(con, aid, prox, sucesso=True)
             return
 
+        # Sem destinos (unidades removidas do unit_groups.json etc.): não vai se resolver no
+        # próximo minuto — pausa já, com o motivo no histórico, para o operador corrigir na tela.
+        # (Uma única linha de sistema: 'falhou' e 'pausado' colidiriam no UNIQUE com chat_id "-".)
+        if not destinos:
+            logger.error("Agendamento %s sem destinos válidos — pausado", aid)
+            ag.concluir_ciclo(con, aid, None, sucesso=False, pausar=True, motivo="sem destinos válidos")
+            return
+
         # 3. Envia a quem ainda não recebeu esta ocorrência (retentativa não duplica)
         feitos = ag.ja_enviados(con, aid, ocorrencia)
         algum_ok = bool(feitos)
+        enviados_agora = 0
         for chat, nome in destinos:
             if chat in feitos:
                 continue
+            if enviados_agora:
+                time.sleep(INTERVALO_ENVIO_S)          # só ENTRE envios
             ok = waha.send_text(chat, a["texto"])
+            enviados_agora += 1
             ag.registrar_envio(con, aid, ocorrencia, chat, nome, "enviado" if ok else "falhou",
                                None if ok else "WAHA retornou falha")
             algum_ok = algum_ok or ok
-            time.sleep(INTERVALO_ENVIO_S)
 
-        if not destinos:
-            logger.warning("Agendamento %s sem destinos válidos", aid)
         # 4./5. Ciclo ok (>=1 enviado) avança; todos falharam -> falha do ciclo, sem avançar
-        sucesso = algum_ok or not destinos
-        prox = ag.proxima_ocorrencia(ocorrencia, a["primeiro_envio"], a["recorrencia"], a["fim"]) if sucesso else None
-        ag.concluir_ciclo(con, aid, prox, sucesso=sucesso)
-        if not sucesso:
+        prox = ag.proxima_ocorrencia(ocorrencia, a["primeiro_envio"], a["recorrencia"], a["fim"]) if algum_ok else None
+        ag.concluir_ciclo(con, aid, prox, sucesso=algum_ok)
+        if not algum_ok:
             logger.error("Agendamento %s: todos os destinos falharam", aid)
     except Exception as exc:
         logger.error("Agendamento %s: exceção no envio: %s", aid, exc, exc_info=True)
-        ag.concluir_ciclo(con, aid, None, sucesso=False)
+        try:
+            ag.concluir_ciclo(con, aid, None, sucesso=False)
+        except Exception as exc2:
+            # Não deixa uma linha ruim derrubar o ciclo; `recuperar_presos` a solta em 10 min
+            logger.error("Agendamento %s: falha ao fechar o ciclo: %s", aid, exc2, exc_info=True)

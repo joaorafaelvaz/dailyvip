@@ -85,3 +85,56 @@ def test_ia_provisoria_503(client):
     c, db, ag = client
     r = c.post("/admin/mensagens/ia", json={"assunto": "x", "tom": "Formal"}, headers={"X-CSRF-Token": _tok(c)})
     assert r.status_code == 503 and "erro" in r.get_json()
+
+
+def test_editar_enviando_responde_409(client):
+    c, db, ag = client
+    aid = ag.criar(db, "x", {"unidades":[61],"todas":False,"franqueadora":False}, datetime(2026,10,23,9,0,tzinfo=TZ), {"tipo":"nenhuma"}, None)
+    ag.reservar_vencidos(db, agora=datetime(2026,10,23,9,1,tzinfo=TZ))
+    tok = _tok(c)
+    assert c.get(f"/admin/mensagens/{aid}/editar").status_code == 409
+    r = c.post(f"/admin/mensagens/{aid}/editar", data={"csrf_token": tok, "texto": "novo", "unidades": ["61"],
+                                                     "data": "2026-12-02", "hora": "16:00", "recorrencia": "nenhuma"})
+    assert r.status_code == 409 and ag.obter(db, aid)["texto"] == "x"
+
+
+def test_editar_mantendo_primeiro_envio_passado(client):
+    c, db, ag = client     # agora congelado em 23/10/2026 10:00
+    aid = ag.criar(db, "x", {"unidades":[61],"todas":False,"franqueadora":False}, datetime(2026,10,20,15,0,tzinfo=TZ), {"tipo":"diaria"}, None)
+    html = c.get(f"/admin/mensagens/{aid}/editar").get_data(as_text=True)
+    assert 'value="2026-10-20"' in html and 'min="' not in html          # sem min= na edição
+    r = c.post(f"/admin/mensagens/{aid}/editar", data={"csrf_token": _tok(c), "texto": "novo", "unidades": ["61"],
+                                                     "data": "2026-10-20", "hora": "15:00", "recorrencia": "diaria"})
+    assert r.status_code == 302
+    a = ag.obter(db, aid)
+    assert a["texto"] == "novo" and a["proximo_envio"] == datetime(2026,10,23,15,0,tzinfo=TZ)
+    # Uma data NOVA no passado continua recusada
+    r = c.post(f"/admin/mensagens/{aid}/editar", data={"csrf_token": _tok(c), "texto": "novo", "unidades": ["61"],
+                                                     "data": "2026-10-21", "hora": "15:00", "recorrencia": "diaria"}, follow_redirects=True)
+    assert "futuro" in r.get_data(as_text=True).lower()
+
+
+def test_estado_transicao_recusada_mostra_erro(client):
+    c, db, ag = client
+    aid = ag.criar(db, "x", {"unidades":[61],"todas":False,"franqueadora":False}, datetime(2026,12,1,15,0,tzinfo=TZ), {"tipo":"nenhuma"}, None)
+    c.post(f"/admin/mensagens/{aid}/estado", data={"csrf_token": _tok(c), "estado": "cancelado"})
+    r = c.post(f"/admin/mensagens/{aid}/estado", data={"csrf_token": _tok(c), "estado": "ativo"}, follow_redirects=True)
+    assert "não foi possível" in r.get_data(as_text=True).lower() and ag.obter(db, aid)["estado"] == "cancelado"
+    assert c.post(f"/admin/mensagens/{aid}/estado", data={"csrf_token": _tok(c), "estado": "concluido"}).status_code == 400
+
+
+def test_agendar_informa_primeiro_envio_calculado(client):
+    c, db, ag = client
+    # 01/12/2026 é terça; semanal seg/sex -> primeiro envio sexta 04/12
+    r = c.post("/admin/mensagens", data={"csrf_token": _tok(c), "texto": "x", "unidades": ["61"], "data": "2026-12-01",
+                                        "hora": "15:00", "recorrencia": "semanal", "dias": ["0","4"]}, follow_redirects=True)
+    assert "04/12/2026 15:00" in r.get_data(as_text=True)
+
+
+def test_todas_sem_unidades_configuradas_e_erro(client, monkeypatch):
+    import config
+    c, db, ag = client
+    monkeypatch.setattr(config, "UNIT_GROUPS", {})
+    r = c.post("/admin/mensagens", data={"csrf_token": _tok(c), "texto": "x", "todas": "1", "data": "2026-12-01",
+                                        "hora": "15:00", "recorrencia": "nenhuma"}, follow_redirects=True)
+    assert "destino" in r.get_data(as_text=True).lower() and ag.listar(db) == []

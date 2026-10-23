@@ -82,8 +82,10 @@ Refatoração necessária no código existente:
 agendamentos(id, texto, destinos_json, primeiro_envio_iso, recorrencia_json, fim_iso NULL,
              proximo_envio_iso, estado[ativo|pausado|enviando|concluido|cancelado],
              falhas_consecutivas, criado_em, atualizado_em)
-envios(id, agendamento_id, ocorrencia_iso, disparado_em, chat_id, destino_nome, status[enviado|falhou|perdido], erro NULL)
+envios(id, agendamento_id, ocorrencia_iso, disparado_em, chat_id, destino_nome, status[enviado|falhou|perdido|pausado], erro NULL)
   -- ocorrencia_iso = o proximo_envio_iso que originou o disparo; UNIQUE(agendamento_id, ocorrencia_iso, chat_id)
+  -- linha "de sistema" (sem destinatário): chat_id="-", destino_nome="sistema", status=pausado, erro=motivo
+  --   (3 falhas consecutivas ou "sem destinos válidos"); uma por ocorrência, por causa do UNIQUE
 ```
 
 - `destinos_json`: `{"unidades":[61,63], "todas":false, "franqueadora":false}`. Os `chat_id` são resolvidos **no envio** via `config.UNIT_GROUPS` (string + lista, mesma regra do briefing) e `config.WAHA_RECIPIENTS`.

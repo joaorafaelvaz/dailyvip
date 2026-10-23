@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 TZ = ZoneInfo("America/Sao_Paulo")
 D = {"unidades": [61], "todas": False, "franqueadora": False}
@@ -42,3 +42,73 @@ def test_resolver_destinos(monkeypatch):
     r = ag.resolver_destinos({"unidades":[61,20],"todas":False,"franqueadora":True})
     assert r == [("a@g.us","SC 401"),("b@c.us","Itajaí"),("c@g.us","Itajaí"),("f@g.us","Franqueadora")]
     assert len(ag.resolver_destinos({"unidades":[],"todas":True,"franqueadora":False})) == 3
+
+
+def test_atualizar_preserva_pausado_e_recalcula():
+    db, ag = _db()
+    aid = ag.criar(db, "x", D, datetime(2026,10,25,15,0,tzinfo=TZ), {"tipo":"diaria"}, None)
+    assert ag.mudar_estado(db, aid, "pausado") == 1
+    assert ag.atualizar(db, aid, "y", D, datetime(2026,11,1,9,0,tzinfo=TZ), {"tipo":"diaria"}, None) == 1
+    a = ag.obter(db, aid)
+    assert a["estado"] == "pausado" and a["texto"] == "y" and a["proximo_envio"] == datetime(2026,11,1,9,0,tzinfo=TZ)
+
+
+def test_atualizar_com_primeiro_no_passado_recalcula_a_partir_de_agora(monkeypatch):
+    import config
+    db, ag = _db()
+    aid = ag.criar(db, "x", D, datetime(2026,10,25,15,0,tzinfo=TZ), {"tipo":"diaria"}, None)
+    monkeypatch.setattr(config, "agora_local", lambda: datetime(2026,10,27,10,0,tzinfo=TZ))   # 2 dias depois
+    assert ag.atualizar(db, aid, "novo", D, datetime(2026,10,25,15,0,tzinfo=TZ), {"tipo":"diaria"}, None) == 1
+    a = ag.obter(db, aid)
+    assert a["texto"] == "novo" and a["estado"] == "ativo" and a["proximo_envio"] == datetime(2026,10,27,15,0,tzinfo=TZ)
+
+
+def test_atualizar_unico_atrasado_pendente_nao_conclui(monkeypatch):
+    import config
+    db, ag = _db()
+    p = datetime(2026,10,25,15,0,tzinfo=TZ)
+    aid = ag.criar(db, "x", D, p, {"tipo":"nenhuma"}, None)
+    monkeypatch.setattr(config, "agora_local", lambda: p + timedelta(minutes=5))
+    assert ag.atualizar(db, aid, "novo", D, p, {"tipo":"nenhuma"}, None) == 1
+    a = ag.obter(db, aid)
+    assert a["estado"] == "ativo" and a["proximo_envio"] == p
+
+
+def test_atualizar_nao_toca_cancelado_nem_enviando():
+    db, ag = _db()
+    p = datetime(2026,10,25,15,0,tzinfo=TZ)
+    a1 = ag.criar(db, "x", D, p, {"tipo":"nenhuma"}, None); ag.mudar_estado(db, a1, "cancelado")
+    a2 = ag.criar(db, "x", D, p, {"tipo":"nenhuma"}, None); ag.reservar_vencidos(db, agora=p + timedelta(minutes=1))
+    assert ag.atualizar(db, a1, "y", D, p, {"tipo":"nenhuma"}, None) == 0
+    assert ag.atualizar(db, a2, "y", D, p, {"tipo":"nenhuma"}, None) == 0
+    assert ag.obter(db, a1)["texto"] == "x" and ag.obter(db, a2)["estado"] == "enviando"
+
+
+def test_transicoes_de_estado():
+    import pytest
+    db, ag = _db()
+    p = datetime(2026,10,25,15,0,tzinfo=TZ)
+    aid = ag.criar(db, "x", D, p, {"tipo":"diaria"}, None)
+    assert ag.mudar_estado(db, aid, "cancelado") == 1
+    assert ag.mudar_estado(db, aid, "ativo") == 0 and ag.obter(db, aid)["estado"] == "cancelado"   # recusado
+    aid2 = ag.criar(db, "x", D, p, {"tipo":"diaria"}, None)
+    ag.reservar_vencidos(db, agora=p + timedelta(minutes=1))
+    assert ag.mudar_estado(db, aid2, "pausado") == 0 and ag.obter(db, aid2)["estado"] == "enviando"  # recusado
+    aid3 = ag.criar(db, "x", D, p, {"tipo":"diaria"}, None)
+    db.execute("UPDATE agendamentos SET falhas_consecutivas=3, estado='pausado' WHERE id=?", (aid3,))
+    assert ag.mudar_estado(db, aid3, "ativo") == 1
+    a = ag.obter(db, aid3)
+    assert a["estado"] == "ativo" and a["falhas_consecutivas"] == 0        # retomar zera o contador
+    with pytest.raises(ValueError):
+        ag.mudar_estado(db, aid3, "concluido")                             # só a máquina conclui
+
+
+def test_concluir_ciclo_nao_registra_pausa_se_cancelado_durante_envio():
+    db, ag = _db()
+    p = datetime(2026,10,25,15,0,tzinfo=TZ)
+    aid = ag.criar(db, "x", D, p, {"tipo":"diaria"}, None)
+    db.execute("UPDATE agendamentos SET falhas_consecutivas=2 WHERE id=?", (aid,))
+    ag.reservar_vencidos(db, agora=p + timedelta(minutes=1))
+    db.execute("UPDATE agendamentos SET estado='cancelado' WHERE id=?", (aid,))   # usuário cancelou no meio
+    assert ag.concluir_ciclo(db, aid, None, sucesso=False) == 0
+    assert ag.obter(db, aid)["estado"] == "cancelado" and ag.historico(db) == []
