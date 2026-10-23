@@ -91,6 +91,7 @@ def test_ia_rota_devolve_texto_ou_erro_amigavel(client, monkeypatch):
     import config
     from admin import ia
     c, db, ag = client
+    gerar_original = ia.gerar_mensagem
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
     monkeypatch.setattr(ia, "gerar_mensagem", lambda assunto, tom: f"*{assunto}* ({tom})")
     r = c.post("/admin/mensagens/ia", json={"assunto": "caixa", "tom": "Formal"}, headers={"X-CSRF-Token": _tok(c)})
@@ -101,6 +102,13 @@ def test_ia_rota_devolve_texto_ou_erro_amigavel(client, monkeypatch):
     monkeypatch.setattr(ia, "gerar_mensagem", _recusa)
     r = c.post("/admin/mensagens/ia", json={"assunto": "x", "tom": "Formal"}, headers={"X-CSRF-Token": _tok(c)})
     assert r.status_code == 400 and "não conseguiu" in r.get_json()["erro"]
+
+    # API fora do ar (503) atravessa gerar_mensagem de verdade e chega à tela como 400 amigável
+    from tests.test_ia import Status503, _fake_client
+    monkeypatch.setattr(ia, "gerar_mensagem", gerar_original)
+    _fake_client(monkeypatch, Status503())
+    r = c.post("/admin/mensagens/ia", json={"assunto": "x", "tom": "Formal"}, headers={"X-CSRF-Token": _tok(c)})
+    assert r.status_code == 400 and "indisponível" in r.get_json()["erro"]
 
 
 def test_editar_enviando_responde_409(client):

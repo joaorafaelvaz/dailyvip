@@ -1,10 +1,23 @@
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 
 # Antes de qualquer import de admin.app: sem admin.log nos testes e cookie sem Secure
 # (o test client fala HTTP puro).
 os.environ["ADMIN_NO_FILE_LOG"] = "1"
 os.environ["ADMIN_INSECURE_COOKIE"] = "1"
+
+# Relógio congelado por padrão: 23/10/2026 13:00 UTC = 10:00 BRT. Testes que precisam
+# de outro instante sobrescrevem `config._agora` (ou `agora_local`/`hoje_local`).
+AGORA_TESTES = datetime(2026, 10, 23, 13, 0, tzinfo=ZoneInfo("UTC"))
+
+
+@pytest.fixture(autouse=True)
+def _relogio_congelado(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "_agora", lambda: AGORA_TESTES)
 
 
 @pytest.fixture(autouse=True)

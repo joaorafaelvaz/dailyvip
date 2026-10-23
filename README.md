@@ -108,7 +108,9 @@ include snippets/daily-admin.conf;
 ```
 
 e rode `nginx -t && systemctl reload nginx`. O `deploy.sh` avisa enquanto o `include` não existir.
-Em instalações novas o `deploy/nginx.conf` já traz o `include`.
+Em instalações novas o `deploy/nginx.conf` já traz o `include`. Com o snippet ativo, a raiz do site (`/`)
+passa a redirecionar para `/admin/relatorios` — não há mais `index.html` na raiz; os dashboards continuam
+acessíveis pelos seus caminhos (`/briefing-YYYY-MM-DD.html` etc.).
 
 Backup: `data/agendamentos.db` é o único arquivo com estado (agendamentos + histórico de envios).
 

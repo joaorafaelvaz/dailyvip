@@ -48,15 +48,16 @@ def gerar_mensagem(assunto: str, tom: str) -> str:
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
         )
-    except anthropic.AuthenticationError:
-        raise IAErro("Chave da Anthropic inválida. Confira ANTHROPIC_API_KEY no .env.")
-    except anthropic.RateLimitError:
-        raise IAErro("Limite de uso da IA atingido. Tente de novo em instantes.")
+    except anthropic.AuthenticationError as exc:
+        raise IAErro("Chave da Anthropic inválida. Confira ANTHROPIC_API_KEY no .env.") from exc
+    except anthropic.RateLimitError as exc:
+        raise IAErro("Limite de uso da IA atingido. Tente de novo em instantes.") from exc
     except anthropic.APIStatusError as exc:
         logger.error("Anthropic status %s: %s", exc.status_code, exc.message)
-        raise IAErro("Serviço de IA indisponível no momento." if exc.status_code >= 500 else f"Erro da IA: {exc.message}")
-    except (anthropic.APITimeoutError, anthropic.APIConnectionError):
-        raise IAErro("Sem resposta da IA (tempo esgotado). Tente de novo.")
+        raise IAErro("Serviço de IA indisponível no momento." if exc.status_code >= 500
+                     else f"Erro da IA: {exc.message}") from exc
+    except (anthropic.APITimeoutError, anthropic.APIConnectionError) as exc:
+        raise IAErro("Sem resposta da IA (tempo esgotado). Tente de novo.") from exc
     if resp.stop_reason == "refusal":
         raise IAErro("A IA não conseguiu gerar uma mensagem para esse assunto. Reformule o pedido.")
     texto = next((b.text for b in resp.content if getattr(b, "type", "") == "text"), "").strip()

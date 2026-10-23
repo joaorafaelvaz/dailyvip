@@ -81,6 +81,8 @@ if ! grep -q '^ADMIN_SECRET_KEY=.\+' "$APP_DIR/.env"; then
     if grep -q '^ADMIN_SECRET_KEY=' "$APP_DIR/.env"; then
         sed -i "s|^ADMIN_SECRET_KEY=.*|ADMIN_SECRET_KEY=$(openssl rand -hex 32)|" "$APP_DIR/.env"
     else
+        # Garante que o .env termina em quebra de linha (senão o append gruda na última linha)
+        if [[ -s "$APP_DIR/.env" && -n "$(tail -c1 "$APP_DIR/.env")" ]]; then echo >> "$APP_DIR/.env"; fi
         echo "ADMIN_SECRET_KEY=$(openssl rand -hex 32)" >> "$APP_DIR/.env"
     fi
 fi

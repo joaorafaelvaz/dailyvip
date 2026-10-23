@@ -44,8 +44,11 @@ def test_resolver_destinos(monkeypatch):
     assert len(ag.resolver_destinos({"unidades":[],"todas":True,"franqueadora":False})) == 3
 
 
-def test_atualizar_preserva_pausado_e_recalcula():
+def test_atualizar_preserva_pausado_e_recalcula(monkeypatch):
+    import config
     db, ag = _db()
+    # Relógio explícito, anterior a `primeiro`: a próxima ocorrência deve ser o novo `primeiro`
+    monkeypatch.setattr(config, "agora_local", lambda: datetime(2026,10,23,10,0,tzinfo=TZ))
     aid = ag.criar(db, "x", D, datetime(2026,10,25,15,0,tzinfo=TZ), {"tipo":"diaria"}, None)
     assert ag.mudar_estado(db, aid, "pausado") == 1
     assert ag.atualizar(db, aid, "y", D, datetime(2026,11,1,9,0,tzinfo=TZ), {"tipo":"diaria"}, None) == 1

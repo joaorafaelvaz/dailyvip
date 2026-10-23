@@ -118,7 +118,7 @@ envios(id, agendamento_id, ocorrencia_iso, disparado_em, chat_id, destino_nome, 
 
 `.env` (novas, todas lidas em `config.py` como as demais): `ANTHROPIC_API_KEY`, `ADMIN_TEST_CHAT_ID` (opcional), `ADMIN_SECRET_KEY` (CSRF/sessão; `setup.sh` gera se ausente). Porta fixa `127.0.0.1:8081` (sem variável). `config.DATA_DIR = <base>/data` com `os.makedirs(exist_ok=True)`, igual a `OUTPUT_DIR`. `requirements.txt`: `flask`, `gunicorn`, `anthropic`. `.gitignore`: `data/`.
 
-`deploy/daily-admin.service`: igual ao `daily-briefing.service` com `ExecStart=.venv/bin/gunicorn -w 2 -b 127.0.0.1:8081 --timeout 120 admin.app:app` (timeout alto por causa da geração síncrona), `StandardOutput/Error` em `admin.log`.
+`deploy/daily-admin.service`: igual ao `daily-briefing.service` com `ExecStart=.venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:8081 --timeout 120 admin.app:app` (timeout alto por causa da geração síncrona; 1 worker porque dois processos rotacionando o mesmo `admin.log` o corromperiam), stdout/stderr no journal; o app escreve `admin.log`.
 
 `deploy.sh` (hoje só conhece `daily-briefing`; com `set -e`, um `systemctl restart daily-admin` antes de a unit existir abortaria o deploy):
 - Novo passo **instalar/atualizar `daily-admin`**: se `/etc/systemd/system/daily-admin.service` não existe **ou** `deploy/daily-admin.service` mudou → copia, `daemon-reload`, `enable --now`. Cobre o servidor já existente sem reexecutar `setup.sh`.

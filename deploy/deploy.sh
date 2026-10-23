@@ -58,7 +58,7 @@ if [[ ! -f "$SNIPPET_DST" ]] || ! cmp -s "$SNIPPET_SRC" "$SNIPPET_DST"; then
     [[ -f "$SNIPPET_DST" ]] && cp "$SNIPPET_DST" "$SNIPPET_DST.bak"
     cp "$SNIPPET_SRC" "$SNIPPET_DST"
     if nginx -t; then
-        systemctl reload nginx
+        systemctl reload nginx || warn "reload do nginx falhou — verifique 'systemctl status nginx'"
     else
         warn "nginx -t falhou com o snippet novo — restaurando o anterior."
         if [[ -f "$SNIPPET_DST.bak" ]]; then cp "$SNIPPET_DST.bak" "$SNIPPET_DST"; else rm -f "$SNIPPET_DST"; fi
@@ -99,6 +99,8 @@ fi
 if ! grep -qE '^ADMIN_SECRET_KEY=.+' "$APP_DIR/.env"; then
     info "Gerando ADMIN_SECRET_KEY no .env..."
     sed -i '/^ADMIN_SECRET_KEY=/d' "$APP_DIR/.env"
+    # Garante que o .env termina em quebra de linha (senão o append gruda na última linha)
+    if [[ -s "$APP_DIR/.env" && -n "$(tail -c1 "$APP_DIR/.env")" ]]; then echo >> "$APP_DIR/.env"; fi
     echo "ADMIN_SECRET_KEY=$(openssl rand -hex 32)" >> "$APP_DIR/.env"
 fi
 
