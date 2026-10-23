@@ -20,19 +20,28 @@ info "Iniciando deploy — $(date '+%Y-%m-%d %H:%M:%S')"
 # Garante que root pode operar no diretório independente do owner
 git config --global --add safe.directory "$APP_DIR"
 
-# 1. Atualiza código
-info "git pull..."
-git -C "$APP_DIR" fetch origin
-LOCAL=$(git -C "$APP_DIR" rev-parse HEAD)
-REMOTE=$(git -C "$APP_DIR" rev-parse origin/main)
+# 1. Atualiza código e RE-EXECUTA este script já atualizado.
+# Motivo: o bash carrega o deploy.sh na memória antes do git pull; sem o
+# re-exec, o restante do deploy roda com a lógica ANTIGA (foi assim que uma
+# trava nova no nginx não protegeu o próprio deploy que a introduziu).
+if [[ -z "${DEPLOY_POST_PULL:-}" ]]; then
+    info "git pull..."
+    git -C "$APP_DIR" fetch origin
+    LOCAL=$(git -C "$APP_DIR" rev-parse HEAD)
+    REMOTE=$(git -C "$APP_DIR" rev-parse origin/main)
 
-if [[ "$LOCAL" == "$REMOTE" ]]; then
-    warn "Nenhuma alteração no repositório. Deploy cancelado."
-    exit 0
+    if [[ "$LOCAL" == "$REMOTE" ]]; then
+        warn "Nenhuma alteração no repositório. Deploy cancelado."
+        exit 0
+    fi
+
+    git -C "$APP_DIR" pull --ff-only origin main
+    info "Código atualizado: ${LOCAL:0:7} → ${REMOTE:0:7}"
+    export DEPLOY_POST_PULL=1 DEPLOY_LOCAL="$LOCAL" DEPLOY_REMOTE="$REMOTE"
+    exec bash "$APP_DIR/deploy/deploy.sh" "$@"
 fi
-
-git -C "$APP_DIR" pull --ff-only origin main
-info "Código atualizado: ${LOCAL:0:7} → ${REMOTE:0:7}"
+LOCAL="$DEPLOY_LOCAL"
+REMOTE="$DEPLOY_REMOTE"
 
 # 2. Atualiza dependências Python se requirements mudou
 if git -C "$APP_DIR" diff --name-only "$LOCAL" "$REMOTE" | grep -q "requirements.txt"; then
@@ -43,7 +52,7 @@ fi
 # 3. Atualiza config do NGINX se mudou
 if git -C "$APP_DIR" diff --name-only "$LOCAL" "$REMOTE" | grep -q "deploy/nginx.conf"; then
     NGINX_LIVE=/etc/nginx/sites-available/daily-briefing
-    if grep -q "managed by Certbot" "$NGINX_LIVE" 2>/dev/null; then
+    if grep -qE "managed by Certbot|listen 443|ssl_certificate" "$NGINX_LIVE" 2>/dev/null; then
         # O Certbot reescreveu o arquivo ativo (bloco SSL + redirect). Copiar o
         # nginx.conf do repo (HTTP-only) por cima derrubaria o HTTPS.
         warn "nginx.conf mudou, mas a config ativa é gerenciada pelo Certbot — NÃO sobrescrita."
