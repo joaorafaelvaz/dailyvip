@@ -1,12 +1,36 @@
 <!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Admin{% endblock %} — Barbearia VIP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">
 </head><body>
-<header><strong>Barbearia VIP — Admin</strong>
-  <nav><a href="{{ url_for('admin.relatorios_page') }}">Relatórios</a> · <a href="{{ url_for('admin.mensagens_page') }}">Mensagens</a></nav>
-</header>
-<main>
-{% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}{% endwith %}
+{% set ep = request.endpoint or '' %}
+<div class="shell">
+<aside class="ui-sidebar desktop open">
+  <div class="sb-brand">
+    <span class="brand-name">
+      <span class="mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></svg></span>
+      <span>Barbearia VIP · Admin</span>
+    </span>
+  </div>
+  <nav class="sb-nav" aria-label="Seções">
+    <a href="{{ url_for('admin.relatorios_page') }}" class="ui-sidebar-link{% if ep.startswith('admin.relatorios') %} active{% endif %}" {% if ep.startswith('admin.relatorios') %}aria-current="page"{% endif %} title="Relatórios">
+      <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7" rx="1"/><rect x="12" y="7" width="3" height="11" rx="1"/><rect x="17" y="13" width="3" height="5" rx="1"/></svg>
+      <span class="label">Relatórios</span>
+    </a>
+    <a href="{{ url_for('admin.mensagens_page') }}" class="ui-sidebar-link{% if ep.startswith('admin.mensagens') %} active{% endif %}" {% if ep.startswith('admin.mensagens') %}aria-current="page"{% endif %} title="Mensagens">
+      <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 11v2a1 1 0 0 0 1 1h2l4 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M14 9a4 4 0 0 1 0 6M17 6a8 8 0 0 1 0 12"/></svg>
+      <span class="label">Mensagens</span>
+    </a>
+  </nav>
+  <div class="sb-spacer"></div>
+  <div class="sb-foot">Briefing diário · {{ hoje.strftime('%d/%m/%Y') }}</div>
+</aside>
+<main class="main">
+{% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}<div class="alert {{ {'ok': 'ok', 'erro': 'error', 'aviso': 'warn'}.get(cat, 'info') }}" role="status">{{ m }}</div>{% endfor %}{% endwith %}
 {% block content %}{% endblock %}
-</main></body></html>
+</main>
+</div>
+</body></html>
