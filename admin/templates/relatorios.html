@@ -1,18 +1,28 @@
 {% extends "base.html" %}{% block title %}Relatórios{% endblock %}{% block content %}
-<h1>Relatórios</h1>
-<form method="post" action="{{ url_for('admin.relatorios_gerar') }}" class="card" onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Gerando… (até 15 s)'">
+<div class="page-head">
+  <div><h1>Relatórios</h1><p class="lead">Abra um briefing já gerado ou gere um novo a partir dos dados do ERP.</p></div>
+</div>
+
+<form method="post" action="{{ url_for('admin.relatorios_gerar') }}" class="card stack" onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Gerando… (até 15 s)'">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>Tipo <select name="tipo">{% for t in tipos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></label>
-  <label>Dia dos dados <input type="date" name="data" id="data" max="{{ ontem.isoformat() }}"></label>
-  <label>Mês (para o mensal) <input type="month" name="mes" id="mes" max="{{ hoje.strftime('%Y-%m') }}"></label>
-  <label><input type="checkbox" name="regerar" value="1" onchange="if(this.checked&&!confirm('Regerar substitui o arquivo existente. Continuar?'))this.checked=false"> Regerar se já existir</label>
-  <button type="submit">Abrir / Gerar</button>
+  <div class="grid cols-3">
+    <div class="field"><label for="tipo">Tipo</label><select name="tipo" id="tipo">{% for t in tipos %}<option value="{{ t }}">{{ t|capitalize }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="data">Dia dos dados</label><input type="date" name="data" id="data" max="{{ ontem.isoformat() }}"><span class="hint">Diário e semanal</span></div>
+    <div class="field"><label for="mes">Mês</label><input type="month" name="mes" id="mes" max="{{ hoje.strftime('%Y-%m') }}"><span class="hint">Só para o mensal</span></div>
+  </div>
+  <div class="row between">
+    <label class="chip"><input type="checkbox" name="regerar" value="1" onchange="if(this.checked&&!confirm('Regerar substitui o arquivo existente. Continuar?'))this.checked=false"> Regerar se já existir</label>
+    <button type="submit" class="btn primary">Abrir / Gerar</button>
+  </div>
   <p class="hint">Diário: escolha o dia dos dados (o arquivo leva a data do dia seguinte). Semanal: qualquer dia da semana. Mensal: qualquer dia do mês.</p>
 </form>
+
+<div class="grid cols-3" style="margin-top: var(--space-5)">
 {% for t in tipos %}
-<section class="card"><h2>{{ t|capitalize }}</h2>
-  {% if lista[t] %}<ul>{% for r in lista[t] %}<li><a href="{{ r.url }}" target="_blank">{{ r.data.strftime('%d/%m/%Y') }}</a> <small>{{ r.arquivo }}</small></li>{% endfor %}</ul>
-  {% else %}<p class="hint">Nenhum relatório {{ t }} gerado ainda.</p>{% endif %}
-</section>
+  <section class="card"><h2>{{ t|capitalize }}</h2>
+    {% if lista[t] %}<ul class="report-list">{% for r in lista[t] %}<li><a href="{{ r.url }}" target="_blank">{{ r.data.strftime('%d/%m/%Y') }}</a> <small title="{{ r.arquivo }}">{{ r.arquivo }}</small></li>{% endfor %}</ul>
+    {% else %}<div class="empty"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg><span>Nenhum relatório {{ t }} gerado ainda.</span></div>{% endif %}
+  </section>
 {% endfor %}
+</div>
 {% endblock %}

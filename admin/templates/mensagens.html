@@ -1,43 +1,69 @@
 {% extends "base.html" %}{% block title %}Mensagens{% endblock %}{% block content %}
-<h1>Mensagens agendadas</h1>
-<form method="post" class="card" id="f" {% if editando %}action="{{ url_for('admin.mensagens_editar', aid=editando.id) }}"{% endif %}>
+<div class="page-head">
+  <div><h1>Mensagens agendadas</h1><p class="lead">Escreva, pré-visualize e agende avisos para os grupos das unidades no WhatsApp.</p></div>
+</div>
+
+<div class="grid composer">
+<form method="post" class="card stack" id="f" {% if editando %}action="{{ url_for('admin.mensagens_editar', aid=editando.id) }}"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  {% if editando %}<p class="hint">Editando o agendamento #{{ editando.id }} — <a href="{{ url_for('admin.mensagens_page') }}">cancelar edição</a></p>{% endif %}
-  <label>Texto <textarea name="texto" id="texto" maxlength="4000" required>{{ v.texto }}</textarea></label>
-  <div id="previa" class="hint"></div>
-  <fieldset><legend>Gerar com IA</legend>
-    <input name="assunto" id="assunto" placeholder="Assunto (ex.: lembrete de fechamento de caixa toda sexta)" style="width:60%">
-    <select id="tom"><option>Amigável</option><option>Formal</option><option>Urgente</option></select>
-    <button type="button" id="btn-ia" {% if not ia_disponivel %}disabled title="Configure ANTHROPIC_API_KEY no .env"{% endif %}>Gerar com IA</button>
-    <span id="ia-status" class="hint"></span>
+  {% if editando %}<div class="alert info">Editando o agendamento #{{ editando.id }} — <a href="{{ url_for('admin.mensagens_page') }}">cancelar edição</a></div>{% endif %}
+
+  <div class="field"><label for="texto">Texto</label><textarea name="texto" id="texto" maxlength="4000" required placeholder="Use *negrito* e _itálico_ como no WhatsApp">{{ v.texto }}</textarea></div>
+
+  <fieldset class="stack"><legend>Gerar com IA</legend>
+    <div class="field"><input name="assunto" id="assunto" placeholder="Assunto (ex.: lembrete de fechamento de caixa toda sexta)"></div>
+    <div class="row"><select id="tom" style="width:auto;min-width:140px"><option>Amigável</option><option>Formal</option><option>Urgente</option></select>
+      <button type="button" class="btn" id="btn-ia" {% if not ia_disponivel %}disabled title="Configure ANTHROPIC_API_KEY no .env"{% endif %}>Gerar com IA</button>
+      <span id="ia-status" class="hint"></span></div>
   </fieldset>
+
   <fieldset><legend>Destinos</legend>
-    <label><input type="checkbox" name="todas" value="1" {% if v.todas %}checked{% endif %}> Todas as unidades</label>
-    <label><input type="checkbox" name="franqueadora" value="1" {% if v.franqueadora %}checked{% endif %}> Franqueadora</label>
-    <div class="grid">{% for uid, nome in unidades %}<label><input type="checkbox" name="unidades" value="{{ uid }}" {% if uid|string in v.unidades %}checked{% endif %}> {{ nome }}</label>{% endfor %}</div>
+    <div class="row">
+      <label class="chip"><input type="checkbox" name="todas" value="1" {% if v.todas %}checked{% endif %}> Todas as unidades</label>
+      <label class="chip"><input type="checkbox" name="franqueadora" value="1" {% if v.franqueadora %}checked{% endif %}> Franqueadora</label>
+    </div>
+    {% if unidades %}<div class="row" style="margin-top: var(--space-2)">{% for uid, nome in unidades %}<label class="chip"><input type="checkbox" name="unidades" value="{{ uid }}" {% if uid|string in v.unidades %}checked{% endif %}> {{ nome }}</label>{% endfor %}</div>{% endif %}
   </fieldset>
-  <label>Primeiro envio <input type="date" name="data" required value="{{ v.data }}" {% if not editando %}min="{{ hoje.isoformat() }}"{% endif %}> <input type="time" name="hora" required value="{{ v.hora }}"></label>
-  <label>Repetição <select name="recorrencia" id="rec">{% for val, nome in [('nenhuma','Nenhuma'),('diaria','Diária'),('semanal','Semanal'),('mensal','Mensal')] %}<option value="{{ val }}" {% if v.recorrencia == val %}selected{% endif %}>{{ nome }}</option>{% endfor %}</select></label>
-  <div id="semanal" {% if v.recorrencia != 'semanal' %}hidden{% endif %}>{% for i, n in [(0,'Seg'),(1,'Ter'),(2,'Qua'),(3,'Qui'),(4,'Sex'),(5,'Sáb'),(6,'Dom')] %}<label style="display:inline-block;margin-right:10px"><input type="checkbox" name="dias" value="{{ i }}" {% if i|string in v.dias %}checked{% endif %}> {{ n }}</label>{% endfor %}</div>
-  <div id="mensal" {% if v.recorrencia != 'mensal' %}hidden{% endif %}><label>Dia do mês <input name="dia_mes" value="{{ v.dia_mes }}" size="6"> (ou <code>ultimo</code>)</label></div>
-  <label>Até (opcional) <input type="date" name="fim" value="{{ v.fim }}"></label>
-  <button type="submit">{% if editando %}Salvar alterações{% else %}Agendar{% endif %}</button>
-  <button type="submit" formaction="{{ url_for('admin.mensagens_teste') }}" formnovalidate {% if not teste_disponivel %}disabled title="Configure ADMIN_TEST_CHAT_ID no .env"{% endif %}>Enviar teste para mim</button>
+
+  <div class="grid cols-2">
+    <div class="field"><label for="data">Primeiro envio</label><div class="row" style="flex-wrap:nowrap"><input type="date" name="data" id="data" required value="{{ v.data }}" {% if not editando %}min="{{ hoje.isoformat() }}"{% endif %}><input type="time" name="hora" id="hora" required value="{{ v.hora }}" style="max-width:130px"></div></div>
+    <div class="field"><label for="rec">Repetição</label><select name="recorrencia" id="rec">{% for val, nome in [('nenhuma','Nenhuma'),('diaria','Diária'),('semanal','Semanal'),('mensal','Mensal')] %}<option value="{{ val }}" {% if v.recorrencia == val %}selected{% endif %}>{{ nome }}</option>{% endfor %}</select></div>
+  </div>
+  <div id="semanal" class="row" {% if v.recorrencia != 'semanal' %}hidden{% endif %}>{% for i, n in [(0,'Seg'),(1,'Ter'),(2,'Qua'),(3,'Qui'),(4,'Sex'),(5,'Sáb'),(6,'Dom')] %}<label class="chip"><input type="checkbox" name="dias" value="{{ i }}" {% if i|string in v.dias %}checked{% endif %}> {{ n }}</label>{% endfor %}</div>
+  <div id="mensal" {% if v.recorrencia != 'mensal' %}hidden{% endif %}><div class="field" style="max-width:220px"><label for="dia_mes">Dia do mês</label><input name="dia_mes" id="dia_mes" value="{{ v.dia_mes }}"><span class="hint">Número do dia ou <code>ultimo</code></span></div></div>
+
+  <div class="field" style="max-width:220px"><label for="fim">Até (opcional)</label><input type="date" name="fim" id="fim" value="{{ v.fim }}"></div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn primary">{% if editando %}Salvar alterações{% else %}Agendar{% endif %}</button>
+    <button type="submit" class="btn" formaction="{{ url_for('admin.mensagens_teste') }}" formnovalidate {% if not teste_disponivel %}disabled title="Configure ADMIN_TEST_CHAT_ID no .env"{% endif %}>Enviar teste para mim</button>
+  </div>
 </form>
-<section class="card"><h2>Próximos envios</h2>
-<table><tr><th>Próximo</th><th>Texto</th><th>Destinos</th><th>Repetição</th><th>Estado</th><th></th></tr>
-{% for a in proximos %}<tr>
-<td>{{ a.proximo_envio.strftime('%d/%m/%Y %H:%M') if a.proximo_envio else '—' }}</td><td>{{ a.texto[:60] }}</td>
+
+<aside class="card stack">
+  <h2 style="margin:0">Prévia</h2>
+  <div class="wa-screen"><div id="previa" class="wa-bubble"></div></div>
+  <span class="hint">Prévia — como vai aparecer no WhatsApp</span>
+</aside>
+</div>
+
+<section class="card" style="margin-top: var(--space-5)"><h2>Próximos envios</h2>
+<div class="table-wrap"><table><thead><tr><th>Próximo</th><th>Texto</th><th>Destinos</th><th>Repetição</th><th>Estado</th><th></th></tr></thead>
+<tbody>{% for a in proximos %}<tr>
+<td style="white-space:nowrap">{{ a.proximo_envio.strftime('%d/%m/%Y %H:%M') if a.proximo_envio else '—' }}</td><td>{{ a.texto[:60] }}</td>
 <td>{% if a.destinos.todas %}todas{% else %}{{ a.destinos.unidades|length }} unid.{% endif %}{% if a.destinos.franqueadora %} + franqueadora{% endif %}</td>
-<td>{{ a.recorrencia.tipo }}</td><td>{{ a.estado }}{% if a.falhas_consecutivas %} <small>({{ a.falhas_consecutivas }} falha(s))</small>{% endif %}</td>
-<td>{% if a.estado == 'enviando' %}<em>enviando…</em>{% else %}<form method="post" action="{{ url_for('admin.mensagens_estado', aid=a.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-{% if a.estado == 'ativo' %}<button name="estado" value="pausado">Pausar</button>{% elif a.estado == 'pausado' %}<button name="estado" value="ativo">Retomar</button>{% endif %}
-<a href="{{ url_for('admin.mensagens_editar', aid=a.id) }}">Editar</a>
-<button name="estado" value="cancelado" onclick="return confirm('Cancelar este agendamento?')">Cancelar</button></form>{% endif %}</td>
-</tr>{% else %}<tr><td colspan="6" class="hint">Nenhum agendamento ativo.</td></tr>{% endfor %}</table></section>
-<section class="card"><h2>Histórico</h2>
-<table><tr><th>Quando</th><th>Destino</th><th>Status</th><th>Texto</th><th>Erro</th></tr>
-{% for h in historico %}<tr><td>{{ h.disparado_em[:16].replace('T',' ') }}</td><td>{{ h.destino_nome }}</td><td>{{ h.status }}</td><td>{{ h.texto }}</td><td>{{ h.erro or '' }}</td></tr>{% else %}<tr><td colspan="5" class="hint">Nenhum envio ainda.</td></tr>{% endfor %}</table></section>
+<td>{{ a.recorrencia.tipo }}</td>
+<td><span class="badge {{ {'ativo':'ok','pausado':'warn','enviando':'info'}.get(a.estado, 'neutral') }}">{{ a.estado }}</span>{% if a.falhas_consecutivas %} <small>({{ a.falhas_consecutivas }} falha(s))</small>{% endif %}</td>
+<td class="actions">{% if a.estado == 'enviando' %}<em>enviando…</em>{% else %}<form method="post" action="{{ url_for('admin.mensagens_estado', aid=a.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{% if a.estado == 'ativo' %}<button class="btn small" name="estado" value="pausado">Pausar</button>{% elif a.estado == 'pausado' %}<button class="btn small" name="estado" value="ativo">Retomar</button>{% endif %}
+<a class="btn small ghost" href="{{ url_for('admin.mensagens_editar', aid=a.id) }}">Editar</a>
+<button class="btn small danger" name="estado" value="cancelado" onclick="return confirm('Cancelar este agendamento?')">Cancelar</button></form>{% endif %}</td>
+</tr>{% else %}<tr><td colspan="6"><div class="empty">Nenhum agendamento ativo.</div></td></tr>{% endfor %}</tbody></table></div></section>
+
+<section class="card" style="margin-top: var(--space-5)"><h2>Histórico</h2>
+<div class="table-wrap"><table><thead><tr><th>Quando</th><th>Destino</th><th>Status</th><th>Texto</th><th>Erro</th></tr></thead>
+<tbody>{% for h in historico %}<tr><td style="white-space:nowrap">{{ h.disparado_em[:16].replace('T',' ') }}</td><td>{{ h.destino_nome }}</td><td><span class="badge {{ {'enviado':'ok','falhou':'err','perdido':'warn'}.get(h.status, 'neutral') }}">{{ h.status }}</span></td><td>{{ h.texto }}</td><td>{{ h.erro or '' }}</td></tr>{% else %}<tr><td colspan="5"><div class="empty">Nenhum envio ainda.</div></td></tr>{% endfor %}</tbody></table></div></section>
+
 <script>
 const rec=document.getElementById('rec');
 function sync(){document.getElementById('semanal').hidden=rec.value!=='semanal';document.getElementById('mensal').hidden=rec.value!=='mensal';}
