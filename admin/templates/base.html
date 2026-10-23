@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">
 </head><body>
 <header><strong>Barbearia VIP — Admin</strong>
-  <nav><a href="{{ url_for('admin.relatorios_page') }}">Relatórios</a> · <a href="#">Mensagens</a></nav>
+  <nav><a href="{{ url_for('admin.relatorios_page') }}">Relatórios</a> · <a href="{{ url_for('admin.mensagens_page') }}">Mensagens</a></nav>
 </header>
 <main>
 {% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}{% endwith %}

@@ -5,14 +5,16 @@ Servido sob /admin (Blueprint) atrás do nginx, que faz a autenticação (Basic 
 import logging
 import os
 import secrets
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
-from flask import (Blueprint, Flask, abort, flash, redirect,
+from flask import (Blueprint, Flask, abort, flash, jsonify, redirect,
                    render_template, request, session, url_for)
 
 import config
+from admin import agendamentos as ag
 from admin import relatorios
+from senders import waha
 
 bp = Blueprint("admin", __name__, url_prefix="/admin",
                template_folder="templates", static_folder="static", static_url_path="/static")
@@ -81,6 +83,147 @@ def relatorios_gerar():
     # Sem flash de sucesso: o redirect vai para o arquivo estático, e a mensagem
     # só apareceria (já velha) na próxima visita ao /admin.
     return redirect(relatorios.url_de(nome))
+
+
+# ── Mensagens agendadas ───────────────────────────────────────────────────────
+
+def _db():
+    con = ag.conectar()
+    ag.criar_schema(con)
+    return con
+
+
+def _parse_form(f):
+    """Valida o formulário (spec §5 'Validação'); retorna (campos, erros)."""
+    erros = []
+    texto = (f.get("texto") or "").strip()
+    if not 1 <= len(texto) <= 4000:
+        erros.append("O texto deve ter entre 1 e 4000 caracteres.")
+    unidades = [int(u) for u in f.getlist("unidades") if str(u) in (config.UNIT_GROUPS or {})]
+    destinos = {"unidades": unidades, "todas": f.get("todas") == "1", "franqueadora": f.get("franqueadora") == "1"}
+    if not (unidades or destinos["todas"] or destinos["franqueadora"]):
+        erros.append("Escolha ao menos um destino.")
+    primeiro = None
+    try:
+        primeiro = datetime.combine(date.fromisoformat(f.get("data", "")),
+                                    datetime.strptime(f.get("hora", ""), "%H:%M").time(), tzinfo=ag.TZ)
+    except ValueError:
+        erros.append("Data/hora inválida.")
+    if primeiro and primeiro < config.agora_local() + timedelta(minutes=1):
+        erros.append("A data/hora do primeiro envio precisa estar no futuro.")
+    tipo = f.get("recorrencia", "nenhuma")
+    rec = {"tipo": tipo}
+    if tipo == "semanal":
+        rec["dias"] = sorted({int(d) for d in f.getlist("dias") if d.isdigit() and 0 <= int(d) <= 6})
+        if not rec["dias"]:
+            erros.append("Marque ao menos um dia da semana.")
+    elif tipo == "mensal":
+        dia = (f.get("dia_mes") or "1").strip().lower()
+        rec["dia"] = "ultimo" if dia == "ultimo" else (int(dia) if dia.isdigit() and 1 <= int(dia) <= 31 else None)
+        if rec["dia"] is None:
+            erros.append("Dia do mês inválido.")
+    elif tipo not in ("nenhuma", "diaria"):
+        erros.append("Repetição inválida.")
+    fim = None
+    if f.get("fim"):
+        try:
+            fim = datetime.combine(date.fromisoformat(f["fim"]), datetime.max.time().replace(microsecond=0), tzinfo=ag.TZ)
+            if primeiro and fim < primeiro:
+                erros.append("A data final precisa ser depois do primeiro envio.")
+        except ValueError:
+            erros.append("Data final inválida.")
+    return {"texto": texto, "destinos": destinos, "primeiro": primeiro, "rec": rec, "fim": fim}, erros
+
+
+def _valores(f, editando=None) -> dict:
+    """Valores para pré-preencher o formulário: POST com erro > agendamento em edição > vazio."""
+    if f:
+        return {"texto": f.get("texto", ""), "unidades": set(f.getlist("unidades")),
+                "todas": f.get("todas") == "1", "franqueadora": f.get("franqueadora") == "1",
+                "data": f.get("data", ""), "hora": f.get("hora", "09:00"),
+                "recorrencia": f.get("recorrencia", "nenhuma"), "dias": set(f.getlist("dias")),
+                "dia_mes": f.get("dia_mes", "1"), "fim": f.get("fim", "")}
+    if editando:
+        rec, p, d = editando["recorrencia"], editando["primeiro_envio"], editando["destinos"]
+        return {"texto": editando["texto"], "unidades": {str(u) for u in d.get("unidades", [])},
+                "todas": bool(d.get("todas")), "franqueadora": bool(d.get("franqueadora")),
+                "data": p.date().isoformat(), "hora": p.strftime("%H:%M"),
+                "recorrencia": rec.get("tipo", "nenhuma"), "dias": {str(x) for x in rec.get("dias", [])},
+                "dia_mes": str(rec.get("dia", 1)), "fim": editando["fim"].date().isoformat() if editando["fim"] else ""}
+    return {"texto": "", "unidades": set(), "todas": False, "franqueadora": False, "data": "", "hora": "09:00",
+            "recorrencia": "nenhuma", "dias": set(), "dia_mes": "1", "fim": ""}
+
+
+def _render_mensagens(con, editando=None):
+    unidades = sorted(((int(k), v.get("nome", k)) for k, v in (config.UNIT_GROUPS or {}).items()), key=lambda x: x[1])
+    return render_template("mensagens.html", unidades=unidades, proximos=ag.listar(con), historico=ag.historico(con),
+                           ia_disponivel=bool(config.ANTHROPIC_API_KEY), teste_disponivel=bool(config.ADMIN_TEST_CHAT_ID),
+                           v=_valores(request.form, editando), editando=editando)
+
+
+@bp.route("/mensagens", methods=["GET", "POST"])
+def mensagens_page():
+    con = _db()
+    if request.method == "POST":
+        campos, erros = _parse_form(request.form)
+        if erros:
+            for e in erros:
+                flash(e, "erro")
+        else:
+            ag.criar(con, campos["texto"], campos["destinos"], campos["primeiro"], campos["rec"], campos["fim"])
+            flash("Mensagem agendada.", "ok")
+            return redirect(url_for("admin.mensagens_page"))
+    return _render_mensagens(con)
+
+
+@bp.route("/mensagens/<int:aid>/editar", methods=["GET", "POST"])
+def mensagens_editar(aid):
+    con = _db()
+    a = ag.obter(con, aid)
+    if not a or a["estado"] in ("cancelado", "concluido"):
+        abort(404)
+    if request.method == "POST":
+        campos, erros = _parse_form(request.form)
+        if erros:
+            for e in erros:
+                flash(e, "erro")
+        else:
+            ag.atualizar(con, aid, campos["texto"], campos["destinos"], campos["primeiro"], campos["rec"], campos["fim"])
+            flash("Agendamento atualizado.", "ok")
+            return redirect(url_for("admin.mensagens_page"))
+    return _render_mensagens(con, editando=a)
+
+
+@bp.route("/mensagens/<int:aid>/estado", methods=["POST"])
+def mensagens_estado(aid):
+    estado = request.form.get("estado")
+    if estado not in ("ativo", "pausado", "cancelado"):
+        abort(400)
+    con = _db()
+    if not ag.obter(con, aid):
+        abort(404)
+    ag.mudar_estado(con, aid, estado)
+    flash("Estado atualizado.", "ok")
+    return redirect(url_for("admin.mensagens_page"))
+
+
+@bp.route("/mensagens/teste", methods=["POST"])
+def mensagens_teste():
+    if not config.ADMIN_TEST_CHAT_ID:
+        abort(400, "ADMIN_TEST_CHAT_ID não configurado")
+    texto = (request.form.get("texto") or "").strip()
+    if not texto:
+        flash("Escreva o texto antes de testar.", "erro")
+        return redirect(url_for("admin.mensagens_page"))
+    ok = waha.send_text(config.ADMIN_TEST_CHAT_ID, texto)
+    flash("Teste enviado para o seu número." if ok else "Falha ao enviar o teste (WAHA).", "ok" if ok else "erro")
+    return redirect(url_for("admin.mensagens_page"))
+
+
+@bp.route("/mensagens/ia", methods=["POST"])
+def mensagens_ia():
+    # Provisória: a Task 13 (admin/ia.py) substitui esta rota.
+    return jsonify({"erro": "IA ainda não disponível"}), 503
 
 
 # ── Fábrica ───────────────────────────────────────────────────────────────────
