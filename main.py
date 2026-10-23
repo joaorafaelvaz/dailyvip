@@ -699,6 +699,19 @@ def main():
         replace_existing=True,
     )
 
+    # Mensagens agendadas pelo app administrativo: verifica a cada minuto
+    from apscheduler.triggers.interval import IntervalTrigger
+    from scheduler.agendamentos_job import processar_agendamentos
+    scheduler.add_job(
+        processar_agendamentos,
+        trigger=IntervalTrigger(minutes=1, timezone=config.TIMEZONE),
+        id="agendamentos",
+        name="Mensagens agendadas",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
     # Meta Ads: diário, só se houver contas configuradas
     if config.META_ADS_ACCOUNTS:
         scheduler.add_job(
