@@ -3,6 +3,9 @@
 import json
 import logging
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -86,6 +89,34 @@ SHOW_INADIMPLENCIA = _optional("SHOW_INADIMPLENCIA", "false").lower() in ("1", "
 DASHBOARD_BASE_URL = _optional("DASHBOARD_BASE_URL", "http://localhost/daily/output")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Dados mutáveis do app administrativo (SQLite, travas) — fora do repo
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def _agora() -> datetime:
+    """Agora, com fuso. Separado para os testes congelarem o relógio."""
+    return datetime.now(ZoneInfo("UTC"))
+
+
+def agora_local() -> datetime:
+    """Agora no fuso do projeto (TIMEZONE)."""
+    return _agora().astimezone(ZoneInfo(TIMEZONE))
+
+
+def hoje_local():
+    """Data de hoje no fuso do projeto. ÚNICA fonte de 'hoje' no código.
+
+    Num servidor em UTC, date.today() erra o dia entre 21h e 24h BRT.
+    """
+    return agora_local().date()
+
+
+# App administrativo
+ANTHROPIC_API_KEY = _optional("ANTHROPIC_API_KEY")
+ADMIN_TEST_CHAT_ID = _optional("ADMIN_TEST_CHAT_ID")
+ADMIN_SECRET_KEY = _optional("ADMIN_SECRET_KEY") or "troque-no-env"   # vazio no .env tambem cai no default
 
 # Estado do relatório Meta Ads (dias vazios consecutivos por conta)
 META_ADS_STATE_PATH = os.path.join(OUTPUT_DIR, "meta_ads_state.json")

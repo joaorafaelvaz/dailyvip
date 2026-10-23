@@ -24,3 +24,6 @@ output/*.json
 .vscode/
 .idea/
 *.swp
+
+# Dados do app administrativo (SQLite, travas)
+data/
