@@ -57,10 +57,41 @@ def test_atualizar_com_primeiro_no_passado_recalcula_a_partir_de_agora(monkeypat
     import config
     db, ag = _db()
     aid = ag.criar(db, "x", D, datetime(2026,10,25,15,0,tzinfo=TZ), {"tipo":"diaria"}, None)
-    monkeypatch.setattr(config, "agora_local", lambda: datetime(2026,10,27,10,0,tzinfo=TZ))   # 2 dias depois
-    assert ag.atualizar(db, aid, "novo", D, datetime(2026,10,25,15,0,tzinfo=TZ), {"tipo":"diaria"}, None) == 1
+    monkeypatch.setattr(config, "agora_local", lambda: datetime(2026,10,27,10,0,tzinfo=TZ))   # 2 dias depois (terça)
+    # Regra alterada (diária -> semanal às terças): recalcula a partir de agora, não de `primeiro`
+    assert ag.atualizar(db, aid, "novo", D, datetime(2026,10,25,15,0,tzinfo=TZ), {"tipo":"semanal","dias":[1]}, None) == 1
     a = ag.obter(db, aid)
     assert a["texto"] == "novo" and a["estado"] == "ativo" and a["proximo_envio"] == datetime(2026,10,27,15,0,tzinfo=TZ)
+
+
+def test_atualizar_mantem_ocorrencia_vencida_se_regra_inalterada(monkeypatch):
+    """Job atrasado: a ocorrência vencida ainda não foi enviada; editar só o texto não a pula."""
+    import config
+    db, ag = _db()
+    p = datetime(2026,10,25,15,0,tzinfo=TZ)
+    aid = ag.criar(db, "x", D, p, {"tipo":"diaria"}, None)
+    monkeypatch.setattr(config, "agora_local", lambda: datetime(2026,10,27,10,0,tzinfo=TZ))
+    assert ag.atualizar(db, aid, "novo", D, p, {"tipo":"diaria"}, None) == 1
+    a = ag.obter(db, aid)
+    assert a["texto"] == "novo" and a["estado"] == "ativo" and a["proximo_envio"] == p
+    # ...mas um `fim` anterior à ocorrência vencida encerra o agendamento
+    assert ag.atualizar(db, aid, "novo", D, p, {"tipo":"diaria"}, datetime(2026,10,24,23,59,59,tzinfo=TZ)) == 1
+    a = ag.obter(db, aid)
+    assert a["estado"] == "concluido" and a["proximo_envio"] is None
+
+
+def test_atualizar_usa_estado_atual_do_banco_e_nao_o_lido(monkeypatch):
+    """Outra requisição pausa entre a leitura e o UPDATE: o estado gravado é o do banco."""
+    db, ag = _db()
+    aid = ag.criar(db, "x", D, datetime(2026,10,25,15,0,tzinfo=TZ), {"tipo":"diaria"}, None)
+    obter_original = ag.obter
+    def obter_e_pausa(con, i):
+        r = obter_original(con, i)
+        db.execute("UPDATE agendamentos SET estado='pausado' WHERE id=?", (i,))
+        return r
+    monkeypatch.setattr(ag, "obter", obter_e_pausa)
+    assert ag.atualizar(db, aid, "y", D, datetime(2026,11,1,9,0,tzinfo=TZ), {"tipo":"diaria"}, None) == 1
+    assert obter_original(db, aid)["estado"] == "pausado"
 
 
 def test_atualizar_unico_atrasado_pendente_nao_conclui(monkeypatch):

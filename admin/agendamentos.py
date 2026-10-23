@@ -156,21 +156,27 @@ def atualizar(con, aid, texto, destinos, primeiro, rec, fim) -> int:
     """Edita um agendamento 'ativo' ou 'pausado' (pausado continua pausado). Retorna linhas afetadas.
 
     Com `primeiro` no passado (edição de uma recorrência já em curso) a próxima
-    ocorrência é recalculada a partir de agora, não de `primeiro`."""
+    ocorrência é recalculada a partir de agora, não de `primeiro` — exceto quando a
+    ocorrência atual já venceu sem ser enviada (job atrasado) e a regra (primeiro envio
+    + recorrência) não mudou: aí ela é mantida, para não ser pulada."""
     a = obter(con, aid)
     if not a or a["estado"] not in ("ativo", "pausado"):
         return 0
     agora = config.agora_local()
-    prox = proxima_ocorrencia(agora if primeiro < agora else None, primeiro, rec, fim)
-    if prox is None and rec.get("tipo") == "nenhuma" and a["proximo_envio"] == primeiro:
-        prox = primeiro          # envio único atrasado e ainda pendente: não o perde
-    estado = "concluido" if prox is None else a["estado"]
+    atual = a["proximo_envio"]
+    if atual and atual <= agora and primeiro == a["primeiro_envio"] and rec == a["recorrencia"]:
+        prox = atual if (fim is None or atual <= fim) else None
+    else:
+        prox = proxima_ocorrencia(agora if primeiro < agora else None, primeiro, rec, fim)
+    # O estado é decidido no próprio UPDATE (não no valor lido acima): se outra requisição
+    # pausou/retomou entre a leitura e a gravação, o estado atual do banco prevalece.
     return con.execute(
         "UPDATE agendamentos SET texto=?,destinos_json=?,primeiro_envio_iso=?,recorrencia_json=?,fim_iso=?,"
-        "proximo_envio_iso=?,estado=?,falhas_consecutivas=0,atualizado_em=? "
+        "proximo_envio_iso=?,estado=CASE WHEN ? IS NULL THEN 'concluido' ELSE estado END,"
+        "falhas_consecutivas=0,atualizado_em=? "
         "WHERE id=? AND estado IN ('ativo','pausado')",
         (texto, json.dumps(destinos), _iso(primeiro), json.dumps(rec), _iso(fim), _iso(prox),
-         estado, _iso(agora), aid)).rowcount
+         _iso(prox), _iso(agora), aid)).rowcount
 
 
 def obter(con, aid) -> Optional[dict]:

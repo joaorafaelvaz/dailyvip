@@ -101,6 +101,8 @@ def test_editar_enviando_responde_409(client):
 def test_editar_mantendo_primeiro_envio_passado(client):
     c, db, ag = client     # agora congelado em 23/10/2026 10:00
     aid = ag.criar(db, "x", {"unidades":[61],"todas":False,"franqueadora":False}, datetime(2026,10,20,15,0,tzinfo=TZ), {"tipo":"diaria"}, None)
+    # O job já enviou 20, 21 e 22/10: a próxima ocorrência está em dia (hoje 15:00)
+    db.execute("UPDATE agendamentos SET proximo_envio_iso=? WHERE id=?", (datetime(2026,10,23,15,0,tzinfo=TZ).isoformat(), aid))
     html = c.get(f"/admin/mensagens/{aid}/editar").get_data(as_text=True)
     assert 'value="2026-10-20"' in html and 'min="' not in html          # sem min= na edição
     r = c.post(f"/admin/mensagens/{aid}/editar", data={"csrf_token": _tok(c), "texto": "novo", "unidades": ["61"],
