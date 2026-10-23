@@ -2191,14 +2191,21 @@ No passo do systemd: copie também `daily-admin.service`; `systemctl enable dail
 
 - [ ] **Step 7: Commit** — `git add deploy/ README.md && git commit -m "feat(deploy): servico daily-admin, snippet nginx /admin, deploy.sh e setup.sh atualizados"`
 
-### Task 15: Verificação de ponta a ponta (`bvip`, depois produção)
+### Task 15: Verificação de ponta a ponta (direto em produção — decisão do usuário)
 
 **Pré-requisitos (do usuário):** `.env` com `ANTHROPIC_API_KEY`, `ADMIN_TEST_CHAT_ID`, `ADMIN_SECRET_KEY`; HTTPS de produção recuperado.
 
-- [ ] **Step 1: Deploy no `bvip`** — `sudo bash deploy/deploy.sh`. Expected: dois serviços ativos; aviso do `include` impresso.
+- [ ] **Step 1: Deploy no `barbeariavip`** (produção; o `bvip` fica fora porque o job de envio vive no `daily-briefing`, desligado lá de propósito) — `sudo bash deploy/deploy.sh`. Expected: dois serviços ativos; aviso do `include` impresso.
 - [ ] **Step 2: Include (uma vez)** — no bloco `server` 443 do arquivo do Certbot, após `auth_basic_user_file`, adicione `include snippets/daily-admin.conf;`; `nginx -t && systemctl reload nginx`.
 - [ ] **Step 3: Relatórios** — `https://<host>/admin/relatorios` pede login; gerar o diário de ontem−3; abrir; conferir "Gerado às" com hora real e a nota de Google Reviews retroativo.
-- [ ] **Step 4: Mensagens** — gerar texto com IA; "Enviar teste para mim" chega; agendar para +2 min na unidade de teste e ver `enviado` no histórico; agendar recorrente e pausar/retomar/cancelar.
+- [ ] **Step 4: Mensagens** — gerar texto com IA; "Enviar teste para mim" chega em `5548999073477@c.us`; agendar para +2 min **apenas para uma unidade de teste escolhida pelo usuário na hora** e ver `enviado` no histórico; agendar recorrente e pausar/retomar/cancelar — e **cancelar o recorrente ao final** para não disparar de verdade.
 - [ ] **Step 5: Logs** — `tail -n 50 admin.log`; `grep "Ciclo:" daily.log | tail` mostra o job.
-- [ ] **Step 6: Produção** — passos 1–2 no `barbeariavip`; conferir que o briefing das 8h do dia seguinte sai inalterado.
+- [ ] **Step 6: Dia seguinte** — conferir que o briefing das 8h sai inalterado (`grep "Iniciando briefing" daily.log | tail -1` e a mensagem no WhatsApp).
 - [ ] **Step 7: Memória do projeto** — registrar em `project_daily_briefing.md`: serviço `daily-admin` (8081), `data/agendamentos.db`, variáveis novas, passo manual do `include`.
+
+---
+
+## Follow-ups (fora do escopo deste plano)
+
+- `date.today()` ainda existe em `composers/whatsapp_message.py`, `whatsapp_unit_message.py`, `whatsapp_meta_ads_message.py` e em `main.py` (datas de cabeçalho, cálculo do período semanal/mensal, `dia` do Meta Ads). Sem efeito prático nos horários de disparo (8h/7h/9h BRT), mas para consistência com a spec §3 trocar por `config.hoje_local()` num commit próprio.
+- Em `main.py`, `from collectors import ... satisfycam, google_reviews` ficou sem uso após a extração para `briefing_core`; remover.
