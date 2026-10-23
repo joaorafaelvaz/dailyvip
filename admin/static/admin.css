@@ -1,0 +1,9 @@
+body{font-family:system-ui,sans-serif;margin:0;background:#f7f7f8;color:#222}
+header{background:#1f2937;color:#fff;padding:12px 20px;display:flex;justify-content:space-between}
+header a{color:#cbd5e1}main{max-width:960px;margin:20px auto;padding:0 16px}
+.card{background:#fff;border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+label{display:block;margin:8px 0}input,select,textarea{font:inherit;padding:6px}textarea{width:100%;min-height:140px}
+button{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer}button:disabled{opacity:.6}
+.hint{color:#6b7280;font-size:.9em}.flash{padding:10px;border-radius:6px;margin-bottom:12px}.flash.ok{background:#dcfce7}.flash.erro{background:#fee2e2}.flash.aviso{background:#fef9c3}
+table{width:100%;border-collapse:collapse;font-size:.95em}td,th{padding:6px;border-bottom:1px solid #eee;text-align:left}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}

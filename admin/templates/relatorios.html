@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Relatórios{% endblock %}{% block content %}
+<h1>Relatórios</h1>
+<form method="post" action="{{ url_for('admin.relatorios_gerar') }}" class="card" onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Gerando… (até 15 s)'">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Tipo <select name="tipo">{% for t in tipos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></label>
+  <label>Dia dos dados <input type="date" name="data" id="data" required max="{{ hoje.isoformat() }}"></label>
+  <label>Mês (para o mensal) <input type="month" name="mes" id="mes" max="{{ hoje.strftime('%Y-%m') }}"></label>
+  <label><input type="checkbox" name="regerar" value="1" onchange="if(this.checked&&!confirm('Regerar substitui o arquivo existente. Continuar?'))this.checked=false"> Regerar se já existir</label>
+  <button type="submit">Abrir / Gerar</button>
+  <p class="hint">Diário: escolha o dia dos dados (o arquivo leva a data do dia seguinte). Semanal: qualquer dia da semana. Mensal: qualquer dia do mês.</p>
+</form>
+{% for t in tipos %}
+<section class="card"><h2>{{ t|capitalize }}</h2>
+  {% if lista[t] %}<ul>{% for r in lista[t] %}<li><a href="{{ r.url }}" target="_blank">{{ r.data.strftime('%d/%m/%Y') }}</a> <small>{{ r.arquivo }}</small></li>{% endfor %}</ul>
+  {% else %}<p class="hint">Nenhum relatório {{ t }} gerado ainda.</p>{% endif %}
+</section>
+{% endfor %}
+{% endblock %}
