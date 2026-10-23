@@ -89,8 +89,12 @@ def _isolated_env(tmp_path, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ADMIN_TEST_CHAT_ID", raising=False)
     import config
+    # config já pode ter sido importado (e lido um .env real): congela os valores de teste
     monkeypatch.setattr(config, "OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setattr(config, "DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "", raising=False)
+    monkeypatch.setattr(config, "ADMIN_TEST_CHAT_ID", "", raising=False)
+    monkeypatch.setattr(config, "ADMIN_SECRET_KEY", "test-secret", raising=False)
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     os.makedirs(config.DATA_DIR, exist_ok=True)
     yield
@@ -165,7 +169,7 @@ def hoje_local():
 # App administrativo
 ANTHROPIC_API_KEY = _optional("ANTHROPIC_API_KEY")
 ADMIN_TEST_CHAT_ID = _optional("ADMIN_TEST_CHAT_ID")
-ADMIN_SECRET_KEY = _optional("ADMIN_SECRET_KEY", "troque-no-env")
+ADMIN_SECRET_KEY = _optional("ADMIN_SECRET_KEY") or "troque-no-env"   # vazio no .env tambem cai no default
 ```
 
 - [ ] **Step 4: Rodar — deve passar** → `2 passed`.
@@ -213,34 +217,46 @@ def _boom(*a, **k):
     raise RuntimeError("db off")
 
 
-def test_collect_all_data_repassa_hoje_e_achata_erp(monkeypatch):
-    import briefing_core as bc
-    chamadas = {}
-    monkeypatch.setattr(bc.erp_mysql, "collect_all", lambda hoje=None: chamadas.setdefault("erp", hoje) or {"faturamento": {"x": 1}})
-    monkeypatch.setattr(bc.perfex_crm, "collect_all", lambda hoje=None: chamadas.setdefault("perfex", hoje) or {"leads": None})
-    monkeypatch.setattr(bc.satisfycam, "collect_all", lambda hoje=None: chamadas.setdefault("scam", hoje) or {"relatorio": None})
-    monkeypatch.setattr(bc.google_reviews, "collect_all", lambda: {"reviews": None})
-    import config
-    monkeypatch.setattr(config, "hoje_local", lambda: date(2026, 10, 20))
+def _fake(chamadas, chave, retorno):
+    """Fake de coletor: registra o argumento `hoje` e devolve `retorno`."""
+    def f(hoje=None):
+        chamadas[chave] = hoje
+        return retorno
+    return f
 
+
+def test_collect_all_data_hoje_real(monkeypatch):
+    import briefing_core as bc, config
     d = date(2026, 10, 20)
+    monkeypatch.setattr(config, "hoje_local", lambda: d)      # nao retroativo
+    chamadas = {}
+    monkeypatch.setattr(bc.erp_mysql, "collect_all", _fake(chamadas, "erp", {"faturamento": {"x": 1}}))
+    monkeypatch.setattr(bc.perfex_crm, "collect_all", _fake(chamadas, "perfex", {"leads": None}))
+    monkeypatch.setattr(bc.satisfycam, "collect_all", _fake(chamadas, "scam", {"relatorio": None}))
+    monkeypatch.setattr(bc.google_reviews, "collect_all", lambda: {"reviews": None})
+
     data = bc.collect_all_data(d)
 
-    assert chamadas["erp"] == d and chamadas["perfex"] == d and chamadas["scam"] == d
-    assert data["faturamento"] == {"x": 1}          # ERP achatado na raiz
-    assert data["perfex"] == {"leads": None}
-    assert data["google"] == {"reviews": None}
+    assert chamadas["erp"] == d and chamadas["scam"] == d
+    assert chamadas["perfex"] is None                 # briefing das 8h mantem a janela atual (spec §3)
+    assert data["faturamento"] == {"x": 1}            # ERP achatado na raiz
+    assert data["perfex"] == {"leads": None} and data["google"] == {"reviews": None}
+    assert not data.get("retroativo")
 
 
-def test_google_pulado_em_data_retroativa(monkeypatch):
+def test_retroativo_pula_google_e_satisfycam(monkeypatch):
     import briefing_core as bc, config
     monkeypatch.setattr(config, "hoje_local", lambda: date(2026, 10, 23))
-    monkeypatch.setattr(bc.erp_mysql, "collect_all", lambda hoje=None: {})
-    monkeypatch.setattr(bc.perfex_crm, "collect_all", lambda hoje=None: {})
-    monkeypatch.setattr(bc.satisfycam, "collect_all", lambda hoje=None: {})
+    chamadas = {}
+    monkeypatch.setattr(bc.erp_mysql, "collect_all", _fake(chamadas, "erp", {}))
+    monkeypatch.setattr(bc.perfex_crm, "collect_all", _fake(chamadas, "perfex", {}))
+    monkeypatch.setattr(bc.satisfycam, "collect_all", _boom)
     monkeypatch.setattr(bc.google_reviews, "collect_all", _boom)
     data = bc.collect_all_data(date(2026, 10, 1))
+    assert chamadas["perfex"] == date(2026, 10, 1)   # retroativo: perfex filtra por hoje-1
     assert data["google"] == {"reviews": None, "retroativo": True}
+    assert data["satisfycam"] == {"relatorio": None, "retroativo": True}
+    assert data["retroativo"] is True
 
 
 def test_colector_com_excecao_vira_dict_vazio(monkeypatch):
@@ -286,10 +302,12 @@ def collect_all_data(hoje: Optional[date] = None) -> dict:
 
     tasks = {
         "erp": lambda: erp_mysql.collect_all(hoje),
-        "perfex": lambda: perfex_crm.collect_all(hoje),
-        "satisfycam": lambda: satisfycam.collect_all(hoje),
+        # Sem data (None) o Perfex mantem a janela atual "ultimas 24h"; so em
+        # relatorio retroativo filtra pelo dia hoje-1 (spec §3).
+        "perfex": lambda: perfex_crm.collect_all(hoje if retroativo else None),
     }
     if not retroativo:
+        tasks["satisfycam"] = lambda: satisfycam.collect_all(hoje)
         tasks["google"] = google_reviews.collect_all
 
     results: dict = {}
@@ -305,23 +323,21 @@ def collect_all_data(hoje: Optional[date] = None) -> dict:
 
     if retroativo:
         results["google"] = {"reviews": None, "retroativo": True}
+        results["satisfycam"] = {"relatorio": None, "retroativo": True}
 
     erp = results.pop("erp", {}) or {}
-    return {**erp, **results}
+    data = {**erp, **results}
+    data["retroativo"] = retroativo      # o template usa para rotular "situacao atual"/"indisponivel"
+    return data
 ```
 
-- [ ] **Step 4: Rodar — deve passar** → `3 passed`. (Os coletores reais ainda não aceitam `hoje`; os fakes cobrem. A Task 4 ajusta os reais.)
+- [ ] **Step 4: Rodar — deve passar** → `3 passed`. (Os coletores reais ainda não aceitam `hoje`; os fakes cobrem. A Task 4 ajusta os reais — e só então o `main.py` passa a usar o `briefing_core`, senão o briefing das 8h cairia no `except` e sairia vazio.)
 
-- [ ] **Step 5: `main.py` passa a usar `briefing_core`** — apague `_collect_erp`, `_collect_perfex`, `_collect_satisfycam`, `_collect_google` e `collect_all_data` (l.85–132). Acrescente `from briefing_core import collect_all_data` aos imports. Mantenha `from collectors import ... meta_ads`. Remova `ThreadPoolExecutor, as_completed` se ficarem sem uso.
-
-Run: `.venv/Scripts/python -m py_compile main.py && grep -n "collect_all_data" main.py`
-Expected: compila; aparecem só usos (não `def collect_all_data`).
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit** (o `main.py` só troca para o `briefing_core` na Task 4, depois que os coletores aceitam `hoje`)
 
 ```bash
-git add briefing_core.py main.py tests/test_briefing_core.py
-git commit -m "refactor: extrai collect_all_data para briefing_core (sem logging), parametrizado por data"
+git add briefing_core.py tests/test_briefing_core.py
+git commit -m "feat: briefing_core.collect_all_data(hoje) sem efeitos colaterais de logging"
 ```
 
 ### Task 4: Coletores aceitam `hoje`
@@ -354,8 +370,11 @@ def test_meta_mensal_retroativa_capa_no_hoje(monkeypatch):
     from collectors import erp_mysql
     c = _captura(monkeypatch, erp_mysql)
     r = erp_mysql.get_meta_mensal({}, hoje=date(2026, 10, 20))
-    assert c[0][1] == (date(2026, 10, 1), date(2026, 10, 20))   # [inicio do mes, hoje)
-    assert r["pct_mes_corrido"] == round(20 / 31 * 100, 1)
+    assert c[0][1] == (date(2026, 10, 1), date(2026, 10, 20))   # [inicio do mes de ontem, hoje)
+    assert r["pct_mes_corrido"] == round(19 / 31 * 100, 1)       # ontem = dia 19
+    c.clear()
+    r = erp_mysql.get_meta_mensal({}, hoje=date(2026, 11, 1))    # dia 1: fecha outubro inteiro
+    assert c[0][1] == (date(2026, 10, 1), date(2026, 11, 1)) and r["pct_mes_corrido"] == 100.0
 
 
 def test_agenda_hoje_e_aniversarios_usam_hoje(monkeypatch):
@@ -398,13 +417,19 @@ def test_satisfycam_e_perfex_aceitam_hoje(monkeypatch):
 
 - `get_media_historica(hoje=None)` (l.62): usar `hoje` nos cálculos dos meses.
 - `get_faturamento_ontem(media_hist=None, hoje=None)` (l.121): `ontem = hoje - timedelta(days=1)`.
-- `get_meta_mensal(media_hist=None, hoje=None)` (l.208): `mes_inicio = date(hoje.year, hoje.month, 1)`; **substituir** o cálculo de `mes_fim` por
+- `get_meta_mensal(media_hist=None, hoje=None)` (l.208): o mês de referência é o de **ontem** (`ref = hoje - timedelta(days=1)`), igual ao faturamento; **substituir** o cálculo de `mes_inicio`/`mes_fim`/`dias_corridos`/`dias_mes` por
   ```python
-  # Acumulado até a data de referência (exclusive). Em data retroativa não
-  # inclui vendas posteriores a ela; em "hoje" real equivale ao mês corrido.
+  # Mes de referencia = mes de "ontem", acumulado ate a data de referencia (exclusive).
+  # No dia 1 o briefing das 8h fecha o mes anterior; no on-demand mensal
+  # (hoje = dia 1 do mes seguinte) cobre o mes inteiro; em data retroativa
+  # nao inclui vendas posteriores a ela.
+  ref = hoje - timedelta(days=1)
+  mes_inicio = date(ref.year, ref.month, 1)
   mes_fim = hoje
+  dias_corridos = ref.day
+  dias_mes = calendar.monthrange(ref.year, ref.month)[1]
   ```
-  e `dias_corridos = hoje.day`.
+  (remova as linhas antigas de `prox_mes`/`prox_ano`/`mes_fim` e os antigos `dias_corridos`/`dias_mes`).
 - `get_agenda_ontem(hoje=None)` (l.318), `get_profissionais_ontem(hoje=None)` (l.515): `ontem = hoje - timedelta(days=1)`.
 - `get_agenda_hoje(hoje=None)` (l.431), `get_barbeiros_ausentes(hoje=None)` (l.606), `get_aniversarios_hoje(hoje=None)` (l.670): usar `hoje`.
 - `get_clientes_sem_retorno(dias=45, hoje=None)` (l.573): `data_alvo = hoje - timedelta(days=dias)`.
@@ -432,11 +457,16 @@ def test_satisfycam_e_perfex_aceitam_hoje(monkeypatch):
 
 - [ ] **Step 6: Nenhum `date.today()` sobrou** — Run: `grep -n "date.today()" collectors/erp_mysql.py collectors/perfex_crm.py collectors/satisfycam.py` → Expected: só a linha do `else` em `perfex_crm.py` (janela atual, intencional).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: `main.py` passa a usar `briefing_core`** — apague `_collect_erp`, `_collect_perfex`, `_collect_satisfycam`, `_collect_google` e `collect_all_data` (l.85–129). Acrescente `from briefing_core import collect_all_data` aos imports. Mantenha `from collectors import ... meta_ads`. Remova `ThreadPoolExecutor, as_completed` se ficarem sem uso.
+
+Run: `.venv/Scripts/python -m py_compile main.py && grep -n "collect_all_data" main.py && .venv/Scripts/python -m pytest -q`
+Expected: compila; só usos (não `def collect_all_data`); suíte verde.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add collectors/erp_mysql.py collectors/perfex_crm.py collectors/satisfycam.py tests/test_collectors_hoje.py
-git commit -m "feat(collectors): data de referencia 'hoje' em todos os coletores diarios e collect_range"
+git add collectors/erp_mysql.py collectors/perfex_crm.py collectors/satisfycam.py main.py tests/test_collectors_hoje.py
+git commit -m "feat(collectors): data de referencia 'hoje' nos coletores; main.py usa briefing_core"
 ```
 
 ### Task 5: Composers com `hoje` + `gerado_em`
@@ -455,10 +485,11 @@ from datetime import date
 
 def test_html_dashboard_usa_hoje_no_nome_e_gerado_em_na_hora():
     from composers import html_dashboard
-    path = html_dashboard.generate({}, hoje=date(2026, 10, 21))
+    path = html_dashboard.generate({"retroativo": True}, hoje=date(2026, 10, 21))
     assert os.path.basename(path) == "briefing-21-10-2026.html"
     html = open(path, encoding="utf-8").read()
     assert "21/10/2026" in html and "Gerado às 00:00" not in html
+    assert "indisponíveis para datas retroativas" in html
 
 
 def test_periodic_dashboard_aceita_hoje():
@@ -489,10 +520,10 @@ def generate(data: dict[str, Any], hoje: Optional[date] = None) -> str:
 ```
 `composers/html_periodic_dashboard.py`: `generate(data, data_inicio, data_fim, tipo="semanal", hoje=None)`; `hoje = hoje or config.hoje_local()`; no render `hoje=hoje, gerado_em=config.agora_local()`.
 
-`templates/dashboard.html.j2`: l.31 → `Gerado às {{ gerado_em.strftime('%H:%M') }}`; l.531 → `Gerado em {{ gerado_em.strftime('%d/%m/%Y às %H:%M') }}`. No card do CRM, rótulo `{{ 'situação atual' if data.get('google', {}).get('retroativo') else 'total no pipeline' }}`. Antes do bloco `{% if reviews and reviews.total > 0 %}`:
+`templates/dashboard.html.j2`: l.31 → `Gerado às {{ gerado_em.strftime('%H:%M') }}`; l.531 → `Gerado em {{ gerado_em.strftime('%d/%m/%Y às %H:%M') }}`. No card do CRM, rótulo `{{ 'situação atual (snapshot de hoje)' if data.get('retroativo') else 'total no pipeline' }}` — `data['retroativo']` é definido pelo `briefing_core` (diário) e por `admin/relatorios.gerar` (semanal/mensal, Task 7). Antes do bloco `{% if reviews and reviews.total > 0 %}`:
 ```jinja
-{% if data.get('google', {}).get('retroativo') %}
-<div class="bg-white rounded-2xl shadow p-5 mb-4 text-sm text-gray-400 italic">⭐ Google Reviews: indisponível para datas retroativas</div>
+{% if data.get('retroativo') %}
+<div class="bg-white rounded-2xl shadow p-5 mb-4 text-sm text-gray-400 italic">⭐ Google Reviews e SatisfyCAM: indisponíveis para datas retroativas</div>
 {% endif %}
 ```
 
@@ -769,6 +800,7 @@ def gerar(tipo: str, d: date) -> str:
                 ref = dom + timedelta(days=1)
                 data = erp_mysql.collect_range(seg, ref, tipo="semanal", hoje=ref)
                 data["perfex"] = perfex_crm.collect_periodo(seg, dom)
+                data["retroativo"] = True
                 path = html_periodic_dashboard.generate(data, seg, dom, tipo="semanal")
             else:
                 ini = date(d.year, d.month, 1)
@@ -776,6 +808,7 @@ def gerar(tipo: str, d: date) -> str:
                 ref = fim + timedelta(days=1)
                 data = erp_mysql.collect_range(ini, ref, tipo="mensal", hoje=ref)
                 data["perfex"] = perfex_crm.collect_periodo(ini, fim)
+                data["retroativo"] = True
                 path = html_periodic_dashboard.generate(data, ini, fim, tipo="mensal")
     except LockBusy:
         raise GeracaoEmAndamento("já há uma geração em andamento; tente em instantes")
@@ -909,7 +942,10 @@ def relatorios_page():
 def relatorios_gerar():
     tipo = request.form.get("tipo", "")
     try:
-        d = date.fromisoformat(request.form.get("data", ""))
+        if tipo == "mensal" and request.form.get("mes"):
+            d = date.fromisoformat(request.form["mes"] + "-01")     # <input type=month> envia YYYY-MM
+        else:
+            d = date.fromisoformat(request.form.get("data", ""))
     except ValueError:
         flash("Data inválida.", "erro")
         return redirect(url_for("admin.relatorios_page"))
@@ -959,7 +995,7 @@ def create_app() -> Flask:
 
 app = create_app()
 ```
-(As rotas de mensagens entram na Task 12; o `base.html` abaixo já linka para `admin.mensagens_page` — até a Task 12, deixe o link como `#` e troque depois.)
+**Regra para as Tasks 12 e 13:** todas as rotas novas (`@bp.route`) e seus imports devem ser inseridos **acima** da seção `# ── Fábrica`. `app = create_app()` registra o Blueprint ao importar o módulo; qualquer `@bp.route` escrito depois dessa linha faz o Flask lançar "setup method 'route' can no longer be called". `app = create_app()` permanece a última linha do arquivo.
 
 - [ ] **Step 4: Templates e CSS**
 
@@ -986,8 +1022,9 @@ app = create_app()
 <form method="post" action="{{ url_for('admin.relatorios_gerar') }}" class="card" onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Gerando… (até 15 s)'">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Tipo <select name="tipo">{% for t in tipos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></label>
-  <label>Dia dos dados <input type="date" name="data" required max="{{ hoje.isoformat() }}"></label>
-  <label><input type="checkbox" name="regerar" value="1"> Regerar se já existir</label>
+  <label>Dia dos dados <input type="date" name="data" id="data" required max="{{ hoje.isoformat() }}"></label>
+  <label>Mês (para o mensal) <input type="month" name="mes" id="mes" max="{{ hoje.strftime('%Y-%m') }}"></label>
+  <label><input type="checkbox" name="regerar" value="1" onchange="if(this.checked&&!confirm('Regerar substitui o arquivo existente. Continuar?'))this.checked=false"> Regerar se já existir</label>
   <button type="submit">Abrir / Gerar</button>
   <p class="hint">Diário: escolha o dia dos dados (o arquivo leva a data do dia seguinte). Semanal: qualquer dia da semana. Mensal: qualquer dia do mês.</p>
 </form>
@@ -1303,7 +1340,9 @@ def listar(con, estados=("ativo", "pausado", "enviando")) -> list[dict]:
 
 def mudar_estado(con, aid, estado) -> None:
     assert estado in ESTADOS
-    con.execute("UPDATE agendamentos SET estado=?, atualizado_em=? WHERE id=?",
+    # Retomar zera o contador: senao um agendamento pausado por 3 falhas pausa de novo na 1a falha
+    extra = ", falhas_consecutivas=0" if estado == "ativo" else ""
+    con.execute(f"UPDATE agendamentos SET estado=?{extra}, atualizado_em=? WHERE id=?",
                 (estado, _iso(config.agora_local()), aid))
 
 
@@ -1340,9 +1379,14 @@ def concluir_ciclo(con, aid, proximo: Optional[datetime], sucesso: bool) -> None
         falhas = a["falhas_consecutivas"] + 1
         estado = "pausado" if falhas >= 3 else "ativo"
         proximo = a["proximo_envio"]            # não avança
+    if not sucesso and estado == "pausado":
+        registrar_envio(con, aid, a["proximo_envio"], "-", "sistema", "pausado",
+                        "pausado automaticamente apos 3 falhas consecutivas")
+    # So atualiza se ainda esta 'enviando': um cancelar/pausar clicado durante o envio prevalece
     con.execute(
         "UPDATE agendamentos SET estado=?, proximo_envio_iso=?, falhas_consecutivas=?, reservado_em_iso=NULL, "
-        "atualizado_em=? WHERE id=?", (estado, _iso(proximo), falhas, _iso(config.agora_local()), aid))
+        "atualizado_em=? WHERE id=? AND estado='enviando'",
+        (estado, _iso(proximo), falhas, _iso(config.agora_local()), aid))
 
 
 def registrar_envio(con, aid, ocorrencia: datetime, chat_id, nome, status, erro=None) -> None:
@@ -1409,9 +1453,10 @@ def _setup(monkeypatch, enviados, resposta=lambda chat: True):
     from admin import agendamentos as ag
     from scheduler import agendamentos_job as job
     db = ag.conectar(":memory:"); ag.criar_schema(db)
-    monkeypatch.setattr(job, "conectar", lambda: db)
-    monkeypatch.setattr(db, "close", lambda: None)           # o job fecha a conexão; o teste a reusa
     monkeypatch.setattr(job.time, "sleep", lambda s: None)
+    # O job recebe a conexao do teste (con=db) e nao a fecha; em producao abre e fecha a sua.
+    original = job.processar_agendamentos
+    monkeypatch.setattr(job, "processar_agendamentos", lambda agora=None, con=None: original(agora=agora, con=db if con is None else con))
     monkeypatch.setattr(config, "UNIT_GROUPS", {"61": {"nome":"SC 401","chat_id":"a@g.us"}, "63": {"nome":"Barreiros","chat_id":"b@g.us"}})
     monkeypatch.setattr(job.waha, "send_text", lambda chat, text: enviados.append(chat) or resposta(chat))
     return db, ag, job
@@ -1499,9 +1544,12 @@ def conectar():
     return con
 
 
-def processar_agendamentos(agora: Optional[datetime] = None) -> int:
+def processar_agendamentos(agora: Optional[datetime] = None, con=None) -> int:
+    """`con` injetavel (testes); quando None, abre e fecha a propria conexao."""
     agora = agora or config.agora_local()
-    con = conectar()
+    propria = con is None
+    if propria:
+        con = conectar()
     try:
         presos = ag.recuperar_presos(con, agora)
         if presos:
@@ -1513,7 +1561,8 @@ def processar_agendamentos(agora: Optional[datetime] = None) -> int:
             logger.info("Ciclo: %d agendamento(s) processado(s)", len(vencidos))
         return len(vencidos)
     finally:
-        con.close()
+        if propria:
+            con.close()
 
 
 def _processar_um(con, a: dict, agora: datetime) -> None:
@@ -1637,7 +1686,7 @@ def test_pausar_cancelar(client):
 
 - [ ] **Step 2: Rodar — deve falhar.**
 
-- [ ] **Step 3: Rotas em `admin/app.py`** (imports: `from admin import agendamentos as ag`, `from senders import waha`)
+- [ ] **Step 3: Rotas em `admin/app.py`** — inserir **acima de `# ── Fábrica`** (imports no topo: `from admin import agendamentos as ag`, `from senders import waha`)
 
 ```python
 def _db():
@@ -1732,7 +1781,39 @@ def mensagens_teste():
     return redirect(url_for("admin.mensagens_page"))
 ```
 
-Edição (`GET/POST /mensagens/<int:aid>/editar`): reutiliza `_parse_form` + `ag.atualizar`, renderiza o mesmo template com `editando=a` e o formulário pré-preenchido; adicione um link "Editar" na lista. (Opcional nesta rodada — a spec pede; implemente após os testes acima passarem.)
+Edição (**obrigatória**, spec §5):
+```python
+@bp.route("/mensagens/<int:aid>/editar", methods=["GET", "POST"])
+def mensagens_editar(aid):
+    con = _db()
+    a = ag.obter(con, aid)
+    if not a or a["estado"] in ("cancelado", "concluido"):
+        abort(404)
+    if request.method == "POST":
+        campos, erros = _parse_form(request.form)
+        if erros:
+            for e in erros:
+                flash(e, "erro")
+        else:
+            ag.atualizar(con, aid, campos["texto"], campos["destinos"], campos["primeiro"], campos["rec"], campos["fim"])
+            flash("Agendamento atualizado.", "ok")
+            return redirect(url_for("admin.mensagens_page"))
+    unidades = sorted(((int(k), v.get("nome", k)) for k, v in (config.UNIT_GROUPS or {}).items()), key=lambda x: x[1])
+    return render_template("mensagens.html", unidades=unidades, proximos=ag.listar(con), historico=ag.historico(con),
+                           ia_disponivel=bool(config.ANTHROPIC_API_KEY), teste_disponivel=bool(config.ADMIN_TEST_CHAT_ID),
+                           form=request.form, editando=a)
+```
+No template, quando `editando` existe: `action="{{ url_for('admin.mensagens_editar', aid=editando.id) }}"`, campos pré-preenchidos a partir de `editando` (texto, unidades marcadas, data/hora de `primeiro_envio`, recorrência e dias, fim) e o botão diz "Salvar alterações". Teste adicional em `tests/test_app_mensagens.py`:
+```python
+def test_editar(client):
+    c, db, ag = client
+    aid = ag.criar(db, "x", {"unidades":[61],"todas":False,"franqueadora":False}, datetime(2026,12,1,15,0,tzinfo=TZ), {"tipo":"nenhuma"}, None)
+    r = c.post(f"/admin/mensagens/{aid}/editar", data={"csrf_token": _tok(c), "texto": "novo", "unidades": ["61"],
+                                                     "data": "2026-12-02", "hora": "16:00", "recorrencia": "diaria"}, follow_redirects=True)
+    a = ag.obter(db, aid)
+    assert a["texto"] == "novo" and a["recorrencia"] == {"tipo": "diaria"} and a["proximo_envio"] == datetime(2026,12,2,16,0,tzinfo=TZ)
+```
+Prévia do texto (spec §5): abaixo do `textarea`, `<div id="previa" class="hint"></div>` e, no `<script>`, `texto.addEventListener('input',()=>{previa.innerHTML=texto.value.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\*(.+?)\*/g,'<b>$1</b>').replace(/_(.+?)_/g,'<i>$1</i>').replace(/\n/g,'<br>');})` (escapa HTML antes de aplicar negrito/itálico).
 
 - [ ] **Step 4: Template `admin/templates/mensagens.html`** (e em `base.html` troque o link `#` por `{{ url_for('admin.mensagens_page') }}`)
 
@@ -1768,8 +1849,10 @@ Edição (`GET/POST /mensagens/<int:aid>/editar`): reutiliza `_parse_form` + `ag
 <td>{% if a.destinos.todas %}todas{% else %}{{ a.destinos.unidades|length }} unid.{% endif %}{% if a.destinos.franqueadora %} + franqueadora{% endif %}</td>
 <td>{{ a.recorrencia.tipo }}</td><td>{{ a.estado }}</td>
 <td><form method="post" action="{{ url_for('admin.mensagens_estado', aid=a.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{% if a.estado == 'enviando' %}<em>enviando…</em>{% else %}
 {% if a.estado == 'ativo' %}<button name="estado" value="pausado">Pausar</button>{% elif a.estado == 'pausado' %}<button name="estado" value="ativo">Retomar</button>{% endif %}
-<button name="estado" value="cancelado" onclick="return confirm('Cancelar este agendamento?')">Cancelar</button></form></td>
+<a href="{{ url_for('admin.mensagens_editar', aid=a.id) }}">Editar</a>
+<button name="estado" value="cancelado" onclick="return confirm('Cancelar este agendamento?')">Cancelar</button>{% endif %}</form></td>
 </tr>{% endfor %}</table></section>
 <section class="card"><h2>Histórico</h2>
 <table><tr><th>Quando</th><th>Destino</th><th>Status</th><th>Texto</th><th>Erro</th></tr>
@@ -1942,7 +2025,7 @@ def gerar_mensagem(assunto: str, tom: str) -> str:
     return texto
 ```
 
-Rota definitiva em `admin/app.py` (substitui a provisória da Task 12):
+Rota definitiva em `admin/app.py` (substitui a provisória da Task 12; fica **acima de `# ── Fábrica`**, `from admin import ia` no topo):
 ```python
 from admin import ia
 
@@ -1962,7 +2045,15 @@ def mensagens_ia():
     return jsonify({"texto": texto})
 ```
 
-- [ ] **Step 4: Rodar — deve passar** → `3 passed`; suíte completa verde.
+Teste de tela (acrescente a `tests/test_app_mensagens.py`):
+```python
+def test_botao_ia_desabilitado_sem_chave(client):
+    c, db, ag = client
+    html = c.get("/admin/mensagens").get_data(as_text=True)
+    assert 'id="btn-ia" disabled' in html
+```
+
+- [ ] **Step 4: Rodar — deve passar** → `3 passed` em `test_ia.py` + o novo em `test_app_mensagens.py`; suíte completa verde.
 
 - [ ] **Step 5: Teste real único (opcional, < US$0,01)** — com `ANTHROPIC_API_KEY` no ambiente local: `.venv/Scripts/python -c "from admin import ia; print(ia.gerar_mensagem('lembrete de fechamento de caixa toda sexta', 'Amigável'))"`.
 
@@ -1984,12 +2075,15 @@ Type=simple
 User=briefing
 Group=briefing
 WorkingDirectory=/opt/barbearia-daily
-ExecStart=/opt/barbearia-daily/.venv/bin/gunicorn -w 2 -b 127.0.0.1:8081 --timeout 120 admin.app:app
+# 1 worker + threads: um unico processo escreve/rotaciona admin.log (2 workers
+# rotacionando o mesmo arquivo corrompem o log). Trafego interno, baixo.
+ExecStart=/opt/barbearia-daily/.venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:8081 --timeout 120 admin.app:app
 Restart=on-failure
 RestartSec=10
 EnvironmentFile=/opt/barbearia-daily/.env
-StandardOutput=append:/opt/barbearia-daily/admin.log
-StandardError=append:/opt/barbearia-daily/admin.log
+# Saida do gunicorn vai ao journal; o app escreve admin.log sozinho (RotatingFileHandler)
+StandardOutput=journal
+StandardError=journal
 NoNewPrivileges=yes
 PrivateTmp=yes
 
@@ -2003,7 +2097,9 @@ WantedBy=multi-user.target
 # Área administrativa (Flask em 127.0.0.1:8081). Incluir dentro do bloco server:
 #   include snippets/daily-admin.conf;
 # Sem barra final no proxy_pass: o prefixo /admin/ é preservado (o Flask roteia sob /admin).
-location /admin/ {
+# "^~": prefixo com prioridade sobre as locations regex do site (senao a regra
+# "~* \.(css|js|...)$" do nginx.conf capturaria /admin/static/admin.css -> 404)
+location ^~ /admin/ {
     proxy_pass http://127.0.0.1:8081;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -2016,7 +2112,7 @@ location = / { return 302 /admin/relatorios; }
 
 Em `deploy/nginx.conf` (instalações novas), dentro do `server`, após as diretivas `auth_basic`: `include snippets/daily-admin.conf;`.
 
-- [ ] **Step 3: `deploy/deploy.sh`** — após o bloco `# 3. Atualiza config do NGINX se mudou`, insira:
+- [ ] **Step 3: `deploy/deploy.sh`** — insira o bloco **3b ANTES** do bloco `# 3. Atualiza config do NGINX se mudou` (o snippet precisa existir antes de um eventual `nginx.conf` com `include`), e os blocos 4c/4b depois dele:
 
 ```bash
 # 3b. Snippet do nginx da área administrativa (arquivo próprio; nunca toca no do Certbot)
@@ -2039,6 +2135,13 @@ if ! grep -q "snippets/daily-admin.conf" /etc/nginx/sites-available/daily-briefi
     warn "A config ativa do nginx ainda NÃO inclui o snippet do /admin. Uma única vez, adicione dentro do bloco server (443):"
     warn "    include snippets/daily-admin.conf;"
     warn "  e rode: nginx -t && systemctl reload nginx"
+fi
+
+# 4c. Segredo do app administrativo (sessao/CSRF): gera se ausente ou vazio
+if ! grep -qE '^ADMIN_SECRET_KEY=.+' "$APP_DIR/.env"; then
+    info "Gerando ADMIN_SECRET_KEY no .env..."
+    sed -i '/^ADMIN_SECRET_KEY=/d' "$APP_DIR/.env"
+    echo "ADMIN_SECRET_KEY=$(openssl rand -hex 32)" >> "$APP_DIR/.env"
 fi
 
 # 4b. Serviço da área administrativa (instala na primeira vez, atualiza se mudou)
@@ -2084,7 +2187,7 @@ No passo do systemd: copie também `daily-admin.service`; `systemctl enable dail
 
 - [ ] **Step 5: Validar** — `bash -n deploy/deploy.sh && bash -n deploy/setup.sh && echo OK` → `OK`.
 
-- [ ] **Step 6: README** — seção "Área administrativa (/admin)": o que é, variáveis novas do `.env`, o passo manual único do `include`, `journalctl -u daily-admin -f` / `tail -f admin.log`.
+- [ ] **Step 6: README** — seção "Área administrativa (/admin)": o que é, variáveis novas do `.env`, o passo manual único do `include`, logs (`tail -f admin.log` para o app; `journalctl -u daily-admin -f` para o gunicorn), e que `data/agendamentos.db` é o único arquivo a incluir em backup.
 
 - [ ] **Step 7: Commit** — `git add deploy/ README.md && git commit -m "feat(deploy): servico daily-admin, snippet nginx /admin, deploy.sh e setup.sh atualizados"`
 
