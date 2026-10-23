@@ -42,9 +42,19 @@ fi
 
 # 3. Atualiza config do NGINX se mudou
 if git -C "$APP_DIR" diff --name-only "$LOCAL" "$REMOTE" | grep -q "deploy/nginx.conf"; then
-    info "nginx.conf mudou — recarregando NGINX..."
-    cp "$APP_DIR/deploy/nginx.conf" /etc/nginx/sites-available/daily-briefing
-    nginx -t && systemctl reload nginx
+    NGINX_LIVE=/etc/nginx/sites-available/daily-briefing
+    if grep -q "managed by Certbot" "$NGINX_LIVE" 2>/dev/null; then
+        # O Certbot reescreveu o arquivo ativo (bloco SSL + redirect). Copiar o
+        # nginx.conf do repo (HTTP-only) por cima derrubaria o HTTPS.
+        warn "nginx.conf mudou, mas a config ativa é gerenciada pelo Certbot — NÃO sobrescrita."
+        warn "Aplique a diferença manualmente e recarregue:"
+        warn "  diff $APP_DIR/deploy/nginx.conf $NGINX_LIVE"
+        warn "  nano $NGINX_LIVE && nginx -t && systemctl reload nginx"
+    else
+        info "nginx.conf mudou — recarregando NGINX..."
+        cp "$APP_DIR/deploy/nginx.conf" "$NGINX_LIVE"
+        nginx -t && systemctl reload nginx
+    fi
 fi
 
 # 4. Atualiza serviço systemd se mudou

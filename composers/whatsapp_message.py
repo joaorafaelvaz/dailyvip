@@ -284,7 +284,7 @@ def compose(data: dict[str, Any]) -> str:
     dashboard_url = data.get("dashboard_url", "")
     lines.append(f"\n{_sep()}")
     if dashboard_url:
-        lines.append(f"📋 *Dashboard completo:* {dashboard_url}")
+        lines.append(f"📋 *Dashboard completo* (login e senha): {dashboard_url}")
     lines.append("_Barbearia VIP — Briefing automático_")
 
     return "\n".join(lines)

@@ -85,7 +85,19 @@ chmod 770 "$APP_DIR/output"     # nginx precisa ler; briefing precisa escrever
 # Permite que nginx leia o output/
 usermod -aG "$APP_USER" www-data 2>/dev/null || true
 
-# ── 7. NGINX ──────────────────────────────────────────────────────────────────
+# ── 7. Login do dashboard (HTTP Basic Auth) ───────────────────────────────────
+HTPASSWD_FILE="/etc/nginx/.htpasswd-daily"
+if [[ ! -f "$HTPASSWD_FILE" ]]; then
+    info "Criando usuário de acesso ao dashboard (htpasswd)..."
+    apt-get install -y -qq apache2-utils
+    htpasswd -cB "$HTPASSWD_FILE" franqueadora     # pede a senha no terminal
+    chown root:www-data "$HTPASSWD_FILE"
+    chmod 640 "$HTPASSWD_FILE"
+else
+    info "Arquivo de senhas $HTPASSWD_FILE já existe, mantendo."
+fi
+
+# ── 8. NGINX ──────────────────────────────────────────────────────────────────
 info "Configurando NGINX..."
 cp "$APP_DIR/deploy/nginx.conf" "$NGINX_CONF"
 
@@ -103,7 +115,7 @@ nginx -t
 systemctl reload nginx
 info "NGINX configurado e recarregado."
 
-# ── 8. SSL com Certbot ────────────────────────────────────────────────────────
+# ── 9. SSL com Certbot ────────────────────────────────────────────────────────
 info "Obtendo certificado SSL via Certbot..."
 if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "ti@barbeariavip.com.br" 2>/dev/null; then
     info "Certificado SSL instalado com sucesso."
@@ -112,7 +124,7 @@ else
     warn "Tente manualmente: certbot --nginx -d $DOMAIN"
 fi
 
-# ── 9. Serviço systemd ────────────────────────────────────────────────────────
+# ── 10. Serviço systemd ────────────────────────────────────────────────────────
 info "Instalando serviço systemd..."
 cp "$APP_DIR/deploy/daily-briefing.service" "$SERVICE_FILE"
 
@@ -123,7 +135,7 @@ systemctl daemon-reload
 systemctl enable daily-briefing
 systemctl start  daily-briefing
 
-# ── 10. Verificação final ─────────────────────────────────────────────────────
+# ── 11. Verificação final ─────────────────────────────────────────────────────
 echo ""
 echo "============================================================"
 info "Instalação concluída!"
