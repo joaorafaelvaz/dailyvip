@@ -5,10 +5,10 @@ Servido sob /admin (Blueprint) atrás do nginx, que faz a autenticação (Basic 
 import logging
 import os
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from logging.handlers import RotatingFileHandler
 
-from flask import (Blueprint, Flask, abort, flash, jsonify, redirect,
+from flask import (Blueprint, Flask, abort, flash, redirect,
                    render_template, request, session, url_for)
 
 import config
@@ -30,13 +30,15 @@ def _csrf_token() -> str:
 def _check_csrf():
     if request.method == "POST":
         tok = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token", "")
-        if not tok or tok != session.get("csrf_token"):
+        if not tok or not secrets.compare_digest(tok, session.get("csrf_token", "")):
             abort(400, "token CSRF inválido — recarregue a página")
 
 
 @bp.app_context_processor
 def _inject():
-    return {"csrf_token": _csrf_token, "hoje": config.hoje_local()}
+    hoje = config.hoje_local()
+    # `ontem` = último dia com dados fechados (limite do <input type=date> do diário)
+    return {"csrf_token": _csrf_token, "hoje": hoje, "ontem": hoje - timedelta(days=1)}
 
 
 # ── Relatórios ────────────────────────────────────────────────────────────────
@@ -66,7 +68,7 @@ def relatorios_gerar():
         return redirect(relatorios.url_de(relatorios.nome_para(tipo, d)))
     try:
         nome = relatorios.gerar(tipo, d)
-    except relatorios.DataInvalida as exc:
+    except (relatorios.DataInvalida, relatorios.ColetaFalhou) as exc:
         flash(f"Não foi possível gerar: {exc}", "erro")
         return redirect(url_for("admin.relatorios_page"))
     except relatorios.GeracaoEmAndamento as exc:
@@ -76,26 +78,41 @@ def relatorios_gerar():
         logging.getLogger("admin").exception("Falha ao gerar relatório %s %s", tipo, d)
         flash("Erro ao gerar o relatório. Veja admin.log.", "erro")
         return redirect(url_for("admin.relatorios_page"))
-    flash(f"Relatório gerado: {nome}", "ok")
+    # Sem flash de sucesso: o redirect vai para o arquivo estático, e a mensagem
+    # só apareceria (já velha) na próxima visita ao /admin.
     return redirect(relatorios.url_de(nome))
 
 
 # ── Fábrica ───────────────────────────────────────────────────────────────────
 
+# Só os loggers raiz: "admin.relatorios", "admin.agendamentos" e "admin.ia"
+# propagam para "admin" (anexar o handler também aos filhos duplicaria cada linha).
+_LOGGERS_RAIZ = ("admin", "briefing", "collectors", "composers")
+
+
 def _setup_logging(app: Flask):
-    log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "admin.log")
-    try:
-        fh = RotatingFileHandler(log_path, maxBytes=5 * 1024 * 1024, backupCount=7)
+    if os.environ.get("ADMIN_NO_FILE_LOG"):      # testes: nada de admin.log
+        return
+    log_path = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "admin.log"))
+    loggers = [logging.getLogger(n) for n in _LOGGERS_RAIZ]
+    for lg in loggers:
+        lg.setLevel(logging.INFO)
+
+    # Reaproveita um handler já anexado (create_app() repetido não deve abrir outro handle)
+    fh = next((h for lg in loggers for h in lg.handlers
+               if isinstance(h, RotatingFileHandler) and h.baseFilename == log_path), None)
+    faltam = [lg for lg in loggers if fh not in lg.handlers]
+    if not faltam:
+        return
+    if fh is None:
+        try:
+            fh = RotatingFileHandler(log_path, maxBytes=5 * 1024 * 1024, backupCount=7)
+        except PermissionError:
+            app.logger.warning("Sem permissão para %s", log_path)
+            return
         fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s — %(message)s"))
-        # Só os loggers raiz: "admin.relatorios", "admin.agendamentos" e "admin.ia"
-        # propagam para "admin" (anexar o handler também aos filhos duplicaria cada linha).
-        for name in ("admin", "briefing", "collectors"):
-            lg = logging.getLogger(name)
-            lg.setLevel(logging.INFO)
-            if not any(isinstance(h, RotatingFileHandler) and h.baseFilename == fh.baseFilename for h in lg.handlers):
-                lg.addHandler(fh)
-    except PermissionError:
-        app.logger.warning("Sem permissão para %s", log_path)
+    for lg in faltam:
+        lg.addHandler(fh)
 
 
 def create_app() -> Flask:
@@ -103,6 +120,9 @@ def create_app() -> Flask:
     app.secret_key = config.ADMIN_SECRET_KEY
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_HTTPONLY"] = True
+    # Em produção o cookie só trafega em HTTPS (nginx). ADMIN_INSECURE_COOKIE=1
+    # libera HTTP puro (testes, app.run local).
+    app.config["SESSION_COOKIE_SECURE"] = os.environ.get("ADMIN_INSECURE_COOKIE") != "1"
     app.register_blueprint(bp)
     _setup_logging(app)
     return app

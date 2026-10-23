@@ -3,7 +3,7 @@
 <form method="post" action="{{ url_for('admin.relatorios_gerar') }}" class="card" onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Gerando… (até 15 s)'">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Tipo <select name="tipo">{% for t in tipos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></label>
-  <label>Dia dos dados <input type="date" name="data" id="data" required max="{{ hoje.isoformat() }}"></label>
+  <label>Dia dos dados <input type="date" name="data" id="data" max="{{ ontem.isoformat() }}"></label>
   <label>Mês (para o mensal) <input type="month" name="mes" id="mes" max="{{ hoje.strftime('%Y-%m') }}"></label>
   <label><input type="checkbox" name="regerar" value="1" onchange="if(this.checked&&!confirm('Regerar substitui o arquivo existente. Continuar?'))this.checked=false"> Regerar se já existir</label>
   <button type="submit">Abrir / Gerar</button>

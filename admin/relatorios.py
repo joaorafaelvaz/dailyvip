@@ -26,6 +26,19 @@ class GeracaoEmAndamento(RuntimeError):
     pass
 
 
+class ColetaFalhou(RuntimeError):
+    """ERP indisponível: nada foi coletado, então nenhum arquivo é (sobre)escrito."""
+
+
+_CHAVES_ERP = ("faturamento", "agenda", "profissionais")
+
+
+def _exigir_erp(data: dict) -> None:
+    """Protege o Regerar: sem dados do ERP, não substitui um arquivo bom por um vazio."""
+    if all(data.get(k) is None for k in _CHAVES_ERP):
+        raise ColetaFalhou("ERP indisponível — relatório não gerado")
+
+
 def _safe_date(y, m, d) -> Optional[date]:
     try:
         return date(int(y), int(m), int(d))
@@ -113,22 +126,25 @@ def gerar(tipo: str, d: date) -> str:
             if tipo == "diario":
                 hoje = d + timedelta(days=1)
                 data = collect_all_data(hoje)
+                _exigir_erp(data)
                 path = html_dashboard.generate(data, hoje=hoje)
             elif tipo == "semanal":
                 seg, dom = semana_de(d)
                 ref = dom + timedelta(days=1)
                 data = erp_mysql.collect_range(seg, ref, tipo="semanal", hoje=ref)
+                _exigir_erp(data)
                 data["perfex"] = perfex_crm.collect_periodo(seg, dom)
                 data["retroativo"] = True
-                path = html_periodic_dashboard.generate(data, seg, dom, tipo="semanal")
+                path = html_periodic_dashboard.generate(data, seg, dom, tipo="semanal", hoje=ref)
             else:
                 ini = date(d.year, d.month, 1)
                 fim = date(d.year, d.month, calendar.monthrange(d.year, d.month)[1])
                 ref = fim + timedelta(days=1)
                 data = erp_mysql.collect_range(ini, ref, tipo="mensal", hoje=ref)
+                _exigir_erp(data)
                 data["perfex"] = perfex_crm.collect_periodo(ini, fim)
                 data["retroativo"] = True
-                path = html_periodic_dashboard.generate(data, ini, fim, tipo="mensal")
+                path = html_periodic_dashboard.generate(data, ini, fim, tipo="mensal", hoje=ref)
     except LockBusy:
         raise GeracaoEmAndamento("já há uma geração em andamento; tente em instantes")
     logger.info("Relatório %s gerado sob demanda: %s", tipo, path)

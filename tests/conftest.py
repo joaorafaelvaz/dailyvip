@@ -1,6 +1,11 @@
 import os
 import pytest
 
+# Antes de qualquer import de admin.app: sem admin.log nos testes e cookie sem Secure
+# (o test client fala HTTP puro).
+os.environ["ADMIN_NO_FILE_LOG"] = "1"
+os.environ["ADMIN_INSECURE_COOKIE"] = "1"
+
 
 @pytest.fixture(autouse=True)
 def _isolated_env(tmp_path, monkeypatch):
