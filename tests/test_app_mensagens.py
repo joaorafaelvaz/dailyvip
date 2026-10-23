@@ -81,10 +81,26 @@ def test_enviando_oculta_botoes(client):
     assert "enviando" in html and 'value="cancelado"' not in html
 
 
-def test_ia_provisoria_503(client):
+def test_ia_sem_chave_503(client):
     c, db, ag = client
     r = c.post("/admin/mensagens/ia", json={"assunto": "x", "tom": "Formal"}, headers={"X-CSRF-Token": _tok(c)})
-    assert r.status_code == 503 and "erro" in r.get_json()
+    assert r.status_code == 503 and "ANTHROPIC_API_KEY" in r.get_json()["erro"]
+
+
+def test_ia_rota_devolve_texto_ou_erro_amigavel(client, monkeypatch):
+    import config
+    from admin import ia
+    c, db, ag = client
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(ia, "gerar_mensagem", lambda assunto, tom: f"*{assunto}* ({tom})")
+    r = c.post("/admin/mensagens/ia", json={"assunto": "caixa", "tom": "Formal"}, headers={"X-CSRF-Token": _tok(c)})
+    assert r.status_code == 200 and r.get_json() == {"texto": "*caixa* (Formal)"}
+
+    def _recusa(assunto, tom):
+        raise ia.IAErro("A IA não conseguiu gerar uma mensagem para esse assunto. Reformule o pedido.")
+    monkeypatch.setattr(ia, "gerar_mensagem", _recusa)
+    r = c.post("/admin/mensagens/ia", json={"assunto": "x", "tom": "Formal"}, headers={"X-CSRF-Token": _tok(c)})
+    assert r.status_code == 400 and "não conseguiu" in r.get_json()["erro"]
 
 
 def test_editar_enviando_responde_409(client):

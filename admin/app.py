@@ -13,6 +13,7 @@ from flask import (Blueprint, Flask, abort, flash, g, jsonify, redirect,
 
 import config
 from admin import agendamentos as ag
+from admin import ia
 from admin import relatorios
 from senders import waha
 
@@ -243,8 +244,17 @@ def mensagens_teste():
 
 @bp.route("/mensagens/ia", methods=["POST"])
 def mensagens_ia():
-    # Provisória: a Task 13 (admin/ia.py) substitui esta rota.
-    return jsonify({"erro": "IA ainda não disponível"}), 503
+    payload = request.get_json(silent=True) or {}
+    try:
+        texto = ia.gerar_mensagem(payload.get("assunto", ""), payload.get("tom", ""))
+    except ia.IAIndisponivel:
+        return jsonify({"erro": "IA não configurada (ANTHROPIC_API_KEY)."}), 503
+    except ia.IAErro as exc:
+        return jsonify({"erro": str(exc)}), 400
+    except Exception:
+        logging.getLogger("admin.ia").exception("Falha inesperada na IA")
+        return jsonify({"erro": "Falha inesperada ao gerar."}), 500
+    return jsonify({"texto": texto})
 
 
 # ── Fábrica ───────────────────────────────────────────────────────────────────
