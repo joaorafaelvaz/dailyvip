@@ -81,6 +81,14 @@ META_SKIP_EMPTY = _optional("META_SKIP_EMPTY", "true").lower() in ("1", "true", 
 # Avisa a franqueadora a partir de N dias vazios consecutivos (0 desativa).
 META_EMPTY_ALERT_DAYS = int(_optional("META_EMPTY_ALERT_DAYS", "3"))
 
+# ─── Aniversariantes do dia (clientes) ───────────────────────────────────────
+# Lista enviada ao grupo de cada unidade com "aniversarios": true em unit_groups.json.
+# Padrão 08:05: logo depois do briefing das 8h, para chegar no grupo após ele.
+ANIVERSARIOS_HOUR = int(_optional("ANIVERSARIOS_HOUR", "8"))
+ANIVERSARIOS_MINUTE = int(_optional("ANIVERSARIOS_MINUTE", "5"))
+# Só clientes com última visita dentro desta janela (meses)
+ANIVERSARIOS_MESES = int(_optional("ANIVERSARIOS_MESES", "12"))
+
 # Seções opcionais dos relatórios (ocultas por padrão — reative via .env)
 SHOW_SATISFYCAM = _optional("SHOW_SATISFYCAM", "false").lower() in ("1", "true", "yes")
 SHOW_INADIMPLENCIA = _optional("SHOW_INADIMPLENCIA", "false").lower() in ("1", "true", "yes")

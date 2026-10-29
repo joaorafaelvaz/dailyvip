@@ -1,5 +1,5 @@
 {
-  "_doc": "Mapeamento unidade_id → destinatários WhatsApp do franqueado. Use chat_id (string única) ou chat_ids (lista). Formatos: grupo XXX@g.us, número 55479999999@c.us.",
+  "_doc": "Mapeamento unidade_id → destinatários WhatsApp do franqueado. Use chat_id (string única) ou chat_ids (lista). Formatos: grupo XXX@g.us, número 55479999999@c.us. Opcional: \"aniversarios\": true para a unidade receber a lista diária de clientes aniversariantes (padrão: não recebe).",
   "units": {
     "1": {
       "nome": "Florianópolis - Santa Mônica",

@@ -42,6 +42,7 @@ _LOG_FILE = os.path.join(_BASE_DIR, "daily.log")
 _LOG_FILE_WEEKLY = os.path.join(_BASE_DIR, "weekly.log")
 _LOG_FILE_MONTHLY = os.path.join(_BASE_DIR, "monthly.log")
 _LOG_FILE_META = os.path.join(_BASE_DIR, "meta_ads.log")
+_LOG_FILE_ANIVERSARIOS = os.path.join(_BASE_DIR, "aniversarios.log")
 
 _handlers = []
 try:
@@ -563,6 +564,20 @@ def run_meta_ads_briefing(
     _remove_file_handler(fh)
 
 
+# ── Aniversariantes do dia (clientes) ─────────────────────────────────────────
+
+def _run_aniversarios_job() -> None:
+    """Job do scheduler: log próprio (aniversarios.log) e nunca derruba o serviço."""
+    from scheduler.aniversarios_job import run_aniversarios
+    fh = _add_file_handler(_LOG_FILE_ANIVERSARIOS)
+    try:
+        run_aniversarios(dry_run=False)
+    except Exception as exc:
+        logger.error("Falha na rotina de aniversariantes: %s", exc, exc_info=True)
+    finally:
+        _remove_file_handler(fh)
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
@@ -622,10 +637,36 @@ def main():
         help="Com --test-meta: envia TUDO para este chat_id em vez dos destinatários reais "
              "(ex: 5547999999999@c.us). Força o envio mesmo em dia vazio e não grava estado."
     )
+    parser.add_argument(
+        "--test-aniversarios", action="store_true",
+        help="Envia AGORA a lista de clientes aniversariantes às unidades com "
+             "\"aniversarios\": true em config/unit_groups.json"
+    )
+    parser.add_argument(
+        "--dry-aniversarios", action="store_true",
+        help="Exibe no terminal a lista de aniversariantes, NÃO envia"
+    )
+    parser.add_argument(
+        "--aniversarios-unit", type=int, metavar="ID",
+        help="Com --test-aniversarios/--dry-aniversarios: só essa unidade, MESMO sem a flag "
+             "\"aniversarios\" (para testar antes de ativar)"
+    )
     args = parser.parse_args()
+
+    if args.aniversarios_unit is not None and not (args.test_aniversarios or args.dry_aniversarios):
+        parser.error("--aniversarios-unit só faz sentido junto com --test-aniversarios ou --dry-aniversarios")
 
     if args.meta_to and not (args.test_meta or args.dry_meta):
         parser.error("--meta-to só faz sentido junto com --test-meta (ou --dry-meta)")
+
+    if args.test_aniversarios or args.dry_aniversarios:
+        from scheduler.aniversarios_job import run_aniversarios
+        fh = _add_file_handler(_LOG_FILE_ANIVERSARIOS)
+        try:
+            run_aniversarios(dry_run=args.dry_aniversarios, only_unit=args.aniversarios_unit)
+        finally:
+            _remove_file_handler(fh)
+        return
 
     if args.test_meta or args.dry_meta:
         run_meta_ads_briefing(
@@ -712,6 +753,21 @@ def main():
         coalesce=True,
     )
 
+    # Aniversariantes do dia: diário; só envia às unidades com "aniversarios": true
+    scheduler.add_job(
+        _run_aniversarios_job,
+        trigger=CronTrigger(
+            hour=config.ANIVERSARIOS_HOUR,
+            minute=config.ANIVERSARIOS_MINUTE,
+            timezone=config.TIMEZONE,
+        ),
+        id="aniversarios",
+        name="Aniversariantes do dia",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
     # Meta Ads: diário, só se houver contas configuradas
     if config.META_ADS_ACCOUNTS:
         scheduler.add_job(
@@ -728,10 +784,11 @@ def main():
 
     logger.info(
         "Scheduler iniciado. Diário: %02d:%02d | Semanal: seg %02d:%02d | Mensal: dia 1 %02d:%02d "
-        "| Meta Ads: %s (%s)",
+        "| Aniversariantes: %02d:%02d | Meta Ads: %s (%s)",
         config.BRIEFING_HOUR, config.BRIEFING_MINUTE,
         config.WEEKLY_BRIEFING_HOUR, config.WEEKLY_BRIEFING_MINUTE,
         config.MONTHLY_BRIEFING_HOUR, config.MONTHLY_BRIEFING_MINUTE,
+        config.ANIVERSARIOS_HOUR, config.ANIVERSARIOS_MINUTE,
         (f"{config.META_BRIEFING_HOUR:02d}:{config.META_BRIEFING_MINUTE:02d} "
          f"({len(config.META_ADS_ACCOUNTS)} conta(s))")
         if config.META_ADS_ACCOUNTS else "desativado",

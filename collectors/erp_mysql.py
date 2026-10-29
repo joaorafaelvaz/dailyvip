@@ -613,6 +613,65 @@ def get_clientes_sem_retorno(dias: int = 45, hoje: Optional[date] = None) -> lis
     return list(rows)
 
 
+def _meses_atras(d: date, meses: int) -> date:
+    """Mesma data `meses` meses antes (dia limitado ao fim do mês de destino)."""
+    import calendar
+    m = d.month - 1 - meses
+    y = d.year + m // 12
+    m = m % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def get_aniversariantes_clientes(hoje: Optional[date] = None, meses: Optional[int] = None) -> list[dict]:
+    """Clientes que fazem aniversário em `hoje` e visitaram alguma unidade nos últimos `meses` meses.
+
+    - Unidade = a da última visita (fallback: unidade de cadastro); só unidades ativas.
+    - Só clientes ativos (status=1) que aceitam contato (marketing=1).
+    - Nascidos em 29/02: em ano não bissexto entram no dia 01/03.
+    """
+    import calendar
+    hoje = hoje or config.hoje_local()
+    meses = meses or config.ANIVERSARIOS_MESES
+    inicio = _meses_atras(hoje, meses)
+    fim = hoje + timedelta(days=1)
+
+    datas = [(hoje.day, hoje.month)]
+    if hoje.month == 3 and hoje.day == 1 and not calendar.isleap(hoje.year):
+        datas.append((29, 2))
+    cond_data = " OR ".join(
+        "(DAY(c.data_nascimento) = %s AND MONTH(c.data_nascimento) = %s)" for _ in datas
+    )
+    params: list = [hoje]
+    for d, m in datas:
+        params.extend([d, m])
+    params.extend([inicio, fim])
+
+    rows = _query(
+        f"""
+        SELECT
+            c.id                                              AS cliente_id,
+            c.nome                                            AS cliente_nome,
+            COALESCE(NULLIF(TRIM(c.telefone), ''), c.telefone_sem_mascara) AS cliente_telefone,
+            c.data_nascimento,
+            TIMESTAMPDIFF(YEAR, c.data_nascimento, %s)        AS anos,
+            c.ultima_visita,
+            COALESCE(c.ultima_visita_unidade, c.unidade)      AS unidade_id,
+            u.nome                                            AS unidade_nome
+        FROM clientes c
+        JOIN unidades u ON u.id = COALESCE(c.ultima_visita_unidade, c.unidade)
+        WHERE c.status = 1
+          AND c.marketing = 1
+          AND c.data_nascimento IS NOT NULL
+          AND ({cond_data})
+          AND c.ultima_visita >= %s AND c.ultima_visita < %s
+          AND u.status = 1
+        ORDER BY u.nome, c.nome
+        """,
+        tuple(params),
+    )
+    return list(rows)
+
+
 def get_barbeiros_ausentes(hoje: Optional[date] = None) -> list[dict]:
     """Retorna colaboradores que não abriram caixa hoje."""
     hoje = hoje or config.hoje_local()

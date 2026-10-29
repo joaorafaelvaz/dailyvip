@@ -164,6 +164,39 @@ um aviso, repetido a cada 7 dias enquanto continuar vazio. Para uma conta recebe
 relatório mesmo vazio, use `"enviar_vazio": true` na entrada dela. A contagem fica em
 `output/meta_ads_state.json`.
 
+## Aniversariantes do dia (clientes)
+
+Rotina separada do briefing: todo dia às 08:05 (`ANIVERSARIOS_HOUR`/`ANIVERSARIOS_MINUTE`)
+cada unidade **que optou por receber** ganha no seu grupo a lista dos clientes que fazem
+aniversário hoje e visitaram a unidade nos últimos 12 meses (`ANIVERSARIOS_MESES`), com nome,
+idade, telefone e data da última visita. Unidade sem aniversariante no dia não recebe nada.
+
+Regras da consulta: cliente ativo, com `marketing = 1` (aceita contato), atribuído à unidade da
+última visita; nascidos em 29/02 entram em 01/03 nos anos não bissextos.
+
+**Ativar por unidade** — em `config/unit_groups.json`, acrescente `"aniversarios": true` à
+entrada da unidade (os destinatários são os mesmos `chat_id`/`chat_ids` do briefing) e
+reinicie o serviço, pois o arquivo é lido na subida:
+
+```json
+"1": {
+  "nome": "Florianópolis - Santa Mônica",
+  "chat_id": "554899161906-1529438950@g.us",
+  "aniversarios": true
+}
+```
+
+Comandos:
+
+```bash
+python main.py --dry-aniversarios                        # mostra no terminal, não envia
+python main.py --dry-aniversarios --aniversarios-unit 1  # só a unidade 1, mesmo sem a flag
+python main.py --test-aniversarios --aniversarios-unit 1 # ENVIA só para a unidade 1
+python main.py --test-aniversarios                       # ENVIA para todas as unidades com a flag
+```
+
+Log próprio em `aniversarios.log`.
+
 ## Logs
 
 ```bash
